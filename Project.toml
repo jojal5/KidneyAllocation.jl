@@ -1,0 +1,13 @@
+name = "KidneyAllocation"
+uuid = "3a2243a4-d160-449f-81bc-9a6af01d47fb"
+authors = ["Jonathan Jalbert <39426670+jojal5@users.noreply.github.com> and contributors"]
+version = "1.0.0-DEV"
+
+[compat]
+julia = "1.10.10"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
