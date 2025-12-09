@@ -3,7 +3,11 @@ uuid = "3a2243a4-d160-449f-81bc-9a6af01d47fb"
 authors = ["Jonathan Jalbert <39426670+jojal5@users.noreply.github.com> and contributors"]
 version = "1.0.0-DEV"
 
+[deps]
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+
 [compat]
+Dates = "1.11.0"
 julia = "1.10.10"
 
 [extras]
