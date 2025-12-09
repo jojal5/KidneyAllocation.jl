@@ -4,9 +4,9 @@
 
 A Julia package for representing kidney donors and recipients, computing key transplant indices (EPTS and KDRI), and evaluating allocation compatibility and score.
 
-[!NOTE]  
+[!NOTE](  
 **All donor and recipient examples in this documentation use synthetic data.  
-No real clinical or confidential information is included.**
+No real clinical or confidential information is included.**)
 
 ---
 
@@ -75,7 +75,7 @@ recipient = Recipient(DateTime(1985,5,1), DateTime(2015,1,1),
 Compute Estimated Post-Transplant Survival:
 
 ```julia
-epts = compute_epts(recipient)
+# TODO
 ```
 
 ---
@@ -85,9 +85,7 @@ epts = compute_epts(recipient)
 Compute Kidney Donor Risk Index:
 
 ```julia
-kdri = evaluate_kdri(age=45, height=175, weight=80,
-                     ethnicity=6, hypertension=true, diabetes=false,
-                     death=4, creatinine=120, hcv=false, dcd=false)
+# TODO
 ```
 
 ---
@@ -104,13 +102,30 @@ Includes components such as wait time, DR mismatch, CPRA, age gap, etc.
 
 ---
 
-## 🔧 Example
+## 🔧 Example Workflow
 
 ```julia
+donor = Donor(DateTime(2025,1,1), 40, O,
+              24, 26,
+              44, 51,
+              1, 4,
+              1.1)
+
+recipient = Recipient(
+    DateTime(1990,3,15),
+    DateTime(2018,1,1),
+    DateTime(2024,1,10),
+    O,
+    24, 26,
+    44, 55,
+    1, 3,
+    95
+)
+
 if is_abo_compatible(donor.blood, recipient.blood)
     println("Score = ", score(donor, recipient))
 else
-    println("ABO incompatible")
+    println("Recipient is ABO-incompatible with this donor.")
 end
 ```
 
