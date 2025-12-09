@@ -72,20 +72,28 @@ recipient = Recipient(DateTime(1985,5,1), DateTime(2015,1,1),
 
 ## 📈 EPTS
 
-Compute Estimated Post-Transplant Survival:
+Compute Estimated Post-Transplant Survival for a `recipient::Recipient` having no history of diabetes and no prior transplant in date of 2025-12-09 :
 
 ```julia
-# TODO
+KidneyAllocation.calculate_epts(recipient, false, false, Date(2025,12,09))
 ```
 
 ---
 
-## ⚖️ KDRI
+## 📈 KDRI
 
-Compute Kidney Donor Risk Index:
+Compute Kidney Donor Risk Index for a donor with the following characteristics:
+- age = 52
+- height = 183 cm
+- weight = 81 kg
+- history of hypertension = true
+- diabetes = false
+- cerebrovascular accident is the cause of death (COD) = true
+- serum creatinine = 1.7 mg/dL
+- donor was recovered as a DCD = true
 
 ```julia
-# TODO
+KidneyAllocation.evaluate_kdri(52, 183, 81, true, false, true, 1.7, true)
 ```
 
 ---
