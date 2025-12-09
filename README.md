@@ -4,9 +4,9 @@
 
 A Julia package for representing kidney donors and recipients, computing key transplant indices (EPTS and KDRI), and evaluating allocation compatibility and score.
 
-[!NOTE](  
-**All donor and recipient examples in this documentation use synthetic data.  
-No real clinical or confidential information is included.**)
+> [!NOTE] 
+> **All donor and recipient examples in this documentation use synthetic data.  
+> No real clinical or confidential information is included.**
 
 ---
 
