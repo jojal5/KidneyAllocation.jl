@@ -33,3 +33,25 @@ function is_abo_compatible(d::ABOGroup, r::ABOGroup)::Bool
         return false
     end
 end
+
+
+
+"""
+    parse_abo(s::AbstractString) -> ABOGroup
+
+Parse an ABO blood group from a string like "O", "A", "B", or "AB".
+"""
+function parse_abo(s::AbstractString)::ABOGroup
+    t = uppercase(strip(s))
+    if t == "O"
+        return O
+    elseif t == "A"
+        return A
+    elseif t == "B"
+        return B
+    elseif t == "AB"
+        return AB
+    else
+        throw(ArgumentError("Invalid ABO group string: '$s' (expected O, A, B, AB)"))
+    end
+end

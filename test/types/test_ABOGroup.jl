@@ -56,4 +56,15 @@
 
     end
 
+    @testset "parse_abo()" begin
+        import KidneyAllocation.parse_abo
+
+        @test parse_abo("O") == O
+        @test parse_abo("A") == A
+        @test parse_abo("B") == B
+        @test parse_abo("AB") == AB
+        @test_throws ArgumentError parse_abo("invalid")
+
+    end
+
 end
