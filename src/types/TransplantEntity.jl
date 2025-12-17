@@ -1,29 +1,19 @@
 abstract type TransplantEntity end
 
-const HLA = UInt8
+const HLA = UInt16
+
 
 # Valid HLA-A serotypes
-const VALID_HLA_A = Set{HLA}([
-    1, 2, 3, 9, 10, 11, 23, 24, 25, 26,
-    29, 30, 31, 32, 33, 34, 36, 43, 66,
-    68, 69, 74, 80
-])
+df_HLA_A = CSV.read("src/types/valid_HLA-A.csv", DataFrame)
+const VALID_HLA_A = Set{HLA}(df_HLA_A.VALID_HLA_A)
 
 # Valid HLA-B serotypes
-const VALID_HLA_B = Set{HLA}([
-    7, 8, 13, 14, 18, 27, 35,
-    37, 38, 39, 40, 41, 42,
-    44, 45, 47, 48, 49, 50,
-    51, 52, 53, 54, 55, 56,
-    57, 58, 59, 60, 61, 62,
-    63, 64, 65, 67, 70, 71,
-    72, 73, 75
-])
+df_HLA_B = CSV.read("src/types/valid_HLA-B.csv", DataFrame)
+const VALID_HLA_B = Set{HLA}(df_HLA_B.VALID_HLA_B)
 
 # Valid HLA-DRB1 serotypes
-const VALID_HLA_DR = Set{HLA}([
-    1, 3, 4, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17
-])
+df_HLA_DR = CSV.read("src/types/valid_HLA-DR.csv", DataFrame)
+const VALID_HLA_DR = Set{HLA}(df_HLA_DR.VALID_HLA_DR)
 
 
 """

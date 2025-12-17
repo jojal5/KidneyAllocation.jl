@@ -1,6 +1,6 @@
 module KidneyAllocation
 
-    using Dates
+    using CSV, DataFrames, Dates
 
     include("types/ABOGroup.jl")
     include("types/TransplantEntity.jl")
