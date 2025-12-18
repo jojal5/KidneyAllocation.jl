@@ -243,17 +243,17 @@ and `false` if `expiration_date` is `nothing`.
 has_expiration(r::Recipient) = r.expiration_date !== nothing
 
 """
-    is_expired(r::Recipient, t::DateTime) -> Bool
+    is_expired(r::Recipient, t::Date) -> Bool
 
 Returns `true` if the recipient has an expiration date and it is
-strictly earlier than the given time `t`. Returns `false` if
+strictly earlier than the given date `t`. Returns `false` if
 there is no expiration date.
 """
-is_expired(r::Recipient, t::DateTime) =
+is_expired(r::Recipient, t::Date) =
     has_expiration(r) && r.expiration_date < t
 
 """
-    is_active(r::Recipient, t::DateTime) -> Bool
+    is_active(r::Recipient, t::Date) -> Bool
 
 Returns `true` if the recipient is active on the waitlist at time `t`.
 
@@ -261,7 +261,7 @@ A recipient is considered active if:
 - the current time `t` is on or after their arrival date, and
 - they have no expiration date, or the expiration date is on or after `t`.
 """
-is_active(r::Recipient, t::DateTime) =
+is_active(r::Recipient, t::Date) =
     t >= r.arrival && !is_expired(r, t)
 
 """

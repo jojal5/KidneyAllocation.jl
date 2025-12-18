@@ -192,9 +192,9 @@
 
         import KidneyAllocation: has_expiration, is_expired, is_active
 
-        birth = DateTime(1980, 1, 1)
-        arrival = DateTime(2024, 1, 1)
-        dialysis = DateTime(2015, 1, 1)
+        birth = Date(1980, 1, 1)
+        arrival = Date(2024, 1, 1)
+        dialysis = Date(2015, 1, 1)
 
         # Valid HLA alleles from your allowed sets
         dr1 = HLA(1)
@@ -214,9 +214,9 @@
 
         @test has_expiration(r_noexp) == false
 
-        t_before = DateTime(2023, 12, 31)
+        t_before = Date(2023, 12, 31)
         t_at_arrival = arrival
-        t_after = DateTime(2025, 1, 1)
+        t_after = Date(2025, 1, 1)
 
         # No expiration: never expired
         @test is_expired(r_noexp, t_before) == false
@@ -229,16 +229,16 @@
         @test is_active(r_noexp, t_after) == true      # after arrival, no expiration
 
         # --- Recipient with explicit expiration date ---
-        exp_date = DateTime(2025, 1, 1)
+        exp_date = Date(2025, 1, 1)
         r_exp = Recipient(birth, dialysis, arrival, blood,
             a1, a2, b1, b2, dr1, dr2,
             cpra; expiration_date=exp_date)
 
         @test has_expiration(r_exp) == true
 
-        t_before_exp = DateTime(2024, 6, 1)
+        t_before_exp = Date(2024, 6, 1)
         t_at_exp = exp_date
-        t_after_exp = DateTime(2025, 6, 1)
+        t_after_exp = Date(2025, 6, 1)
 
         # Expired logic: uses strict < t
         @test is_expired(r_exp, t_before_exp) == false
@@ -261,9 +261,9 @@
 
         import KidneyAllocation.is_hetero
 
-        birth = DateTime(1980, 1, 1)
-        arrival = DateTime(2024, 1, 1)
-        dialysis = DateTime(2015, 1, 1)
+        birth = Date(1980, 1, 1)
+        arrival = Date(2024, 1, 1)
+        dialysis = Date(2015, 1, 1)
 
         # Heterozygous at DR: 1 and 4
         dr_het1 = HLA(1)
