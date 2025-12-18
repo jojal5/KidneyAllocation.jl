@@ -7,6 +7,10 @@ using Test
 using Dates, CSV, DataFrames
 
 df = CSV.read("/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/cleaned_candidates.csv", DataFrame)
+df.CAN_LISTING_DT = Date.(df.CAN_LISTING_DT)
+df.CAN_DIAL_DT = Date.(df.CAN_DIAL_DT)
+df.UPDATE_TM = Date.(df.UPDATE_TM)
+
 df_cpra = CSV.read("/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/CandidatesCPRA.csv", DataFrame)
 
 
@@ -29,7 +33,7 @@ if df_id.OUTCOME[1] == "TX"
 else
     # Si non transplanté avec un donneur décédé, on prend la dernière date d'attente active pour calculer la date d'expiration
     ind = findfirst(df_id.OUTCOME .== "1")
-    d = round(Int64, KidneyAllocation.days_between(df_id.UPDATE_TM[end], df_id.UPDATE_TM[ind-1]))
+    d = KidneyAllocation.days_between(df_id.UPDATE_TM[end], df_id.UPDATE_TM[ind-1])
     exp_date = df_id.UPDATE_TM[end] + Day(d)
 end
 

@@ -218,7 +218,7 @@ function Base.show(io::IO, ::MIME"text/plain", r::Recipient)
         "  HLA-A          : $(r.a1), $(r.a2)\n",
         "  HLA-B          : $(r.b1), $(r.b2)\n",
         "  HLA-DR         : $(r.dr1), $(r.dr2)\n",
-        "  CPRA           : $(r.CPRA)\n",
+        "  CPRA           : $(r.cpra)\n",
         "  Expiration     : ",
         r.expiration_date === nothing ? "none" : string(r.expiration_date)
     )
@@ -226,7 +226,7 @@ end
 
 function Base.summary(io::IO, r::Recipient)
     print(io,
-        "Recipient(blood=$(r.blood), CPRA=$(r.CPRA), ",
+        "Recipient(blood=$(r.blood), CPRA=$(r.cpra), ",
         "A=($(r.a1),$(r.a2)), ",
         "B=($(r.b1),$(r.b2)), ",
         "DR=($(r.dr1),$(r.dr2)))"
