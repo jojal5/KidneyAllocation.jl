@@ -15,7 +15,7 @@ Note: This is a simplified conversion. In practice, this would be calculated
 based on the distribution of raw scores in the recipient pool.
 Typically done via lookup tables maintained by OPTN.
 """
-function calculate_epts(recipient::Recipient, has_diabetes::Bool=false, prior_transplant::Bool=false, current_date::Union{Date,DateTime}=Dates.now())
+function calculate_epts(recipient::Recipient, has_diabetes::Bool=false, prior_transplant::Bool=false, current_date::Date=Dates.today())
 
     current_age = years_between(recipient.birth, current_date)
 
