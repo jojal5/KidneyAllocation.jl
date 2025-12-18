@@ -22,7 +22,7 @@
             dr1, dr2, kdri)
 
         @test d isa Donor
-        @test d.arrival == arrival
+        @test d.arrival == Date(arrival)
         @test d.age == age
         @test d.blood == blood
         @test d.a1 == a1

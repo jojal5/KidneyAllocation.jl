@@ -21,8 +21,8 @@ const VALID_HLA_DR = Set{HLA}(df_HLA_DR.VALID_HLA_DR)
 
 Represents a donor with demographic, clinical, and immunologic attributes.
 
-Fields
-- `arrival::DateTime`: Arrival date and time of the donor.
+# Fields
+- `arrival::Date`: Arrival date of the donor.
 - `age::Int64`: Age of the donor at the time of donation.
 - `blood::ABOGroup`: ABO blood group of the donor.
 - `a1::HLA`, `a2::HLA`: HLA-A antigens.
@@ -31,7 +31,7 @@ Fields
 - `kdri::Float64`: Kidney Donor Risk Index.
 """
 struct Donor <: TransplantEntity
-    arrival::DateTime
+    arrival::Date
     age::Int64
     blood::ABOGroup
     a1::HLA
@@ -42,45 +42,45 @@ struct Donor <: TransplantEntity
     dr2::HLA
     kdri::Float64
 
-    function Donor(arrival::DateTime,
-        age::Int64,
-        blood::ABOGroup,
-        a1::HLA, a2::HLA,
-        b1::HLA, b2::HLA,
-        dr1::HLA, dr2::HLA,
-        kdri::Float64)
+    function Donor(arrival::Date,
+                   age::Int64,
+                   blood::ABOGroup,
+                   a1::HLA, a2::HLA,
+                   b1::HLA, b2::HLA,
+                   dr1::HLA, dr2::HLA,
+                   kdri::Float64)
 
         # Validate HLA alleles by locus
-        a1 ∈ VALID_HLA_A || throw(ArgumentError("Invalid A allele a1 = $a1"))
-        a2 ∈ VALID_HLA_A || throw(ArgumentError("Invalid A allele a2 = $a2"))
+        a1 ∈ VALID_HLA_A  || throw(ArgumentError("Invalid A allele a1 = $a1"))
+        a2 ∈ VALID_HLA_A  || throw(ArgumentError("Invalid A allele a2 = $a2"))
 
-        b1 ∈ VALID_HLA_B || throw(ArgumentError("Invalid B allele b1 = $b1"))
-        b2 ∈ VALID_HLA_B || throw(ArgumentError("Invalid B allele b2 = $b2"))
+        b1 ∈ VALID_HLA_B  || throw(ArgumentError("Invalid B allele b1 = $b1"))
+        b2 ∈ VALID_HLA_B  || throw(ArgumentError("Invalid B allele b2 = $b2"))
 
         dr1 ∈ VALID_HLA_DR || throw(ArgumentError("Invalid DR allele dr1 = $dr1"))
         dr2 ∈ VALID_HLA_DR || throw(ArgumentError("Invalid DR allele dr2 = $dr2"))
 
         # Validate age and kdri
-        age > 0 || throw(ArgumentError("Donor age must be > 0, got $age"))
+        age > 0  || throw(ArgumentError("Donor age must be > 0, got $age"))
         kdri > 0 || throw(ArgumentError("KDRI must be > 0, got $kdri"))
 
         return new(arrival, age, blood,
-            a1, a2, b1, b2,
-            dr1, dr2, kdri)
+                   a1, a2, b1, b2,
+                   dr1, dr2, kdri)
     end
 end
 
 # Outer constructors
 
 function Donor(arrival::Union{Date,DateTime},
-               age::Int64,
+               age::Int,
                blood::ABOGroup,
                a1::Integer, a2::Integer,
                b1::Integer, b2::Integer,
                dr1::Integer, dr2::Integer,
                kdri::Float64)
 
-    return Donor(_dt(arrival),
+    return Donor(Date(arrival),
                  age,
                  blood,
                  HLA(a1), HLA(a2),
