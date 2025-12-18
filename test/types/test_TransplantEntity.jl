@@ -110,7 +110,7 @@
         @test r.a2 == a2
         @test r.b1 == b1
         @test r.b2 == b2
-        @test r.CPRA == cpra
+        @test r.cpra == cpra
         @test r.blood == blood
         @test r.expiration_date === nothing
 
@@ -130,14 +130,14 @@
             a1, a2, b1, b2,
             dr1, dr2,
             0)
-        @test r0.CPRA == 0
+        @test r0.cpra == 0
 
         r100 = Recipient(birth, dialysis, arrival,
             blood,
             a1, a2, b1, b2,
             dr1, dr2,
             100)
-        @test r100.CPRA == 100
+        @test r100.cpra == 100
 
         # --- Invalid CPRA values ---
         @test_throws ArgumentError Recipient(birth, dialysis, arrival,
