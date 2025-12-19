@@ -1,29 +1,23 @@
 
-# Normalize Date / DateTime to DateTime
-_dt(x::DateTime) = x
-_dt(x::Date) = DateTime(x)
+# # Normalize Date / DateTime to DateTime
+# _dt(x::DateTime) = x
+# _dt(x::Date) = DateTime(x)
 
 
 """
-    days_between(d1::Union{Date,DateTime}, d2::Union{Date,DateTime})
+    days_between(d1::Date, d2::Date) -> Int
 
-Compute the number of days between two dates.
+Compute the signed number of days between two dates.
 
-## Details
+- Positive if `d2` is after `d1`
+- Negative if `d2` is before `d1`
+- Zero if `d1 == d2`
 
-- Returns a positive integer if `d2` occurs after `d1`
-- Returns a negative integer if `d2` occurs before `d1`
-- Returns 0 if the same calendar day
-
-Both `Date` and `DateTime` inputs are accepted and normalized.
-The result is symmetric:
-
-    days_between(a, b) == -days_between(b, a)
+Symmetry holds:
+`days_between(a, b) == -days_between(b, a)`.
 """
-function days_between(d1::Union{Date,DateTime}, d2::Union{Date,DateTime})
-    t1 = _dt(d1)
-    t2 = _dt(d2)
-    return (t2 - t1)/Day(1)
+function days_between(d1::Date, d2::Date)::Int
+    return Dates.value(d2 - d1)
 end
 
 """
@@ -39,13 +33,13 @@ providing an approximation that accounts for leap years on average.
 Returns a positive value if `d2 > d1`, negative if `d2 < d1`,
 and zero if both dates fall on the same day.
 """
-function fractionalyears_between(d1::Union{Date,DateTime}, d2::Union{Date,DateTime})
+function fractionalyears_between(d1::Date, d2::Date)
     ndays = days_between(d1, d2)
     return ndays/365.25
 end
 
 """
-    years_between(d1::Union{Date,DateTime}, d2::Union{Date,DateTime})
+    years_between(d1::Date, d2::Date)
 
 Compute the number of full calendar years between two dates.
 
@@ -59,20 +53,16 @@ has occurred relative to the later date.
 This function satisfies the symmetry:
     years_between(a, b) == -years_between(b, a)
 """
-function years_between(d1::Union{Date,DateTime}, d2::Union{Date,DateTime})::Int
-
-    # Normalize inputs
-    t1 = _dt(d1)
-    t2 = _dt(d2)
+function years_between(d1::Date, d2::Date)::Int
 
     # Equal dates → zero
-    t1 == t2 && return 0
+    d1 == d2 && return 0
 
     # Determine direction
-    forward = t2 > t1
+    forward = d2 > d1
 
     # Let a = earlier, b = later
-    a, b = forward ? (t1, t2) : (t2, t1)
+    a, b = forward ? (d1, d2) : (d2, d1)
 
     # Raw year difference
     y = year(b) - year(a)

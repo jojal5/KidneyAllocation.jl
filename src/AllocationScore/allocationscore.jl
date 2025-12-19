@@ -195,7 +195,7 @@ Scoring rules:
 - 80 ≤ cPRA ≤ 100 → score = 8
 """
 function score_CPRA(r::Recipient)::Int
-    cpra = r.CPRA
+    cpra = r.cpra
 
     if cpra < 20
         return 0
