@@ -66,7 +66,7 @@ function evaluate_kdri(age::Real, height::Real, weight::Real,
                        hypertension::Bool, diabetes::Bool, cva::Bool,
                        creatinine::Real, dcd::Bool)::Float64
 
-    @assert age > 0       "Age should be positive, got $age"
+    @assert age ≥ 0       "Age should be non-negative, got $age"
     @assert 1 < height < 241    "Height should be in (1, 241) cm, got $height"
     @assert 0.9072 < weight < 294.835  "Weight should be in (0.9072, 294.835) kg, got $weight"
     @assert 0.01 < creatinine < 9.99   "Creatinine should be in (0.01, 9.99) mg/dL, got $creatinine"
