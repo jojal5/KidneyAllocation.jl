@@ -185,6 +185,109 @@ function shift_recipient_timeline(recipient::Recipient, new_arrival::Date)::Reci
 end
 
 
-
-
 shift_recipient_timeline(r, Date(2020,1,1))
+
+@testset "shift_recipient_timeline" begin
+    import KidneyAllocation.days_between
+    
+    birth    = Date(1980, 1, 1)
+    dialysis = Date(2010, 1, 1)
+    arrival  = Date(2020, 1, 1)
+    expiry   = Date(2025, 1, 1)
+
+    r = Recipient(
+        birth,
+        dialysis,
+        arrival,
+        A,
+        24, 26,
+        44, 51,
+        1, 4,
+        80;
+        expiration_date = expiry
+    )
+
+    # --- Forward shift ---
+    new_arrival = Date(2022, 1, 1)
+    r2 = shift_recipient_timeline(r, new_arrival)
+
+    shift_days = days_between(arrival, new_arrival)
+
+    @test r2.arrival == new_arrival
+    @test r2.birth == birth + Day(shift_days)
+    @test r2.dialysis == dialysis + Day(shift_days)
+    @test r2.expiration_date == expiry + Day(shift_days)
+
+    # Preserve non-date fields
+    @test r2.blood == r.blood
+    @test r2.a1 == r.a1
+    @test r2.b2 == r.b2
+    @test r2.dr1 == r.dr1
+    @test r2.cpra == r.cpra
+
+    # --- Backward shift ---
+    earlier_arrival = Date(2018, 1, 1)
+    r3 = shift_recipient_timeline(r, earlier_arrival)
+
+    shift_days_back = days_between(arrival, earlier_arrival)
+
+    @test r3.arrival == earlier_arrival
+    @test r3.birth == birth + Day(shift_days_back)
+    @test r3.dialysis == dialysis + Day(shift_days_back)
+    @test r3.expiration_date == expiry + Day(shift_days_back)
+
+    # --- No expiration date ---
+    r_noexp = Recipient(
+        birth,
+        dialysis,
+        arrival,
+        O,
+        24, 26,
+        44, 51,
+        1, 4,
+        10
+    )
+
+    r4 = shift_recipient_timeline(r_noexp, new_arrival)
+
+    @test r4.expiration_date === nothing
+    @test r4.birth == birth + Day(shift_days)
+    @test r4.dialysis == dialysis + Day(shift_days)
+end
+
+
+
+
+
+using Random, Dates, Test
+
+"""
+    sample_days(d1::Date, d2::Date, n::Integer) -> Vector{Date}
+
+Sample `n` dates uniformly (with replacement) between `d1` and `d2` (inclusive).
+"""
+function sample_days(d1::Date, d2::Date, n::Integer)::Vector{Date}
+    dmin, dmax = min(d1, d2), max(d1, d2)
+
+    ndays = Dates.value(dmax - dmin) + 1
+    offsets = sort(rand(0:ndays-1, n))
+
+    return dmin .+ Day.(offsets)
+end
+
+d1 = Date(2000,1,1)
+d2 = Date(2020,12,31)
+
+@time sample_days(d1, d2, 100)
+
+
+@testset "sample_days" begin
+    # --- Basic properties ---
+    d1 = Date(2024, 1, 1)
+    d2 = Date(2024, 1, 10)
+
+    s = sample_days(d1, d2, 10)
+
+    @test length(s) == 10
+    @test all(d -> d1 <= d <= d2, s)
+end

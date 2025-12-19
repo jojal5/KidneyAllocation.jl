@@ -34,8 +34,6 @@ function is_abo_compatible(d::ABOGroup, r::ABOGroup)::Bool
     end
 end
 
-
-
 """
     parse_abo(s::AbstractString) -> ABOGroup
 
