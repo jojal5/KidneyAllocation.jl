@@ -77,6 +77,20 @@ function years_between(d1::Date, d2::Date)::Int
 end
 
 """
+    sample_days(d1::Date, d2::Date, n::Integer) -> Vector{Date}
+
+Sample `n` dates uniformly (with replacement) between `d1` and `d2` (inclusive).
+"""
+function sample_days(d1::Date, d2::Date, n::Integer)::Vector{Date}
+    dmin, dmax = min(d1, d2), max(d1, d2)
+
+    ndays = Dates.value(dmax - dmin) + 1
+    offsets = sort(rand(0:ndays-1, n))
+
+    return dmin .+ Day.(offsets)
+end
+
+"""
     creatinine_mgdl(creat_umol_L::Real)
 
 Convert creatinine from µmol/L to mg/dL.
