@@ -18,6 +18,10 @@ filter!(row -> row.OUTCOME ∈ ("TX", "1", "0", "X", "Dcd", "Tx Vivant"), df)
 
 can_id = unique(df.CAN_ID)
 
+
+
+
+
 id = 4 # Transplanté
 id = 5 # Retiré
 
@@ -108,85 +112,76 @@ for id in can_id
 end
 
 
-id = can_id[100]
 
 
-df_id = filter(row -> row.CAN_ID == id, df)
-sort!(df_id, :UPDATE_TM, rev=true)
+import KidneyAllocation: evaluate_kdri, creatinine_mgdl
 
-df_cpra_id = filter(row -> row.CAN_ID == id, df_cpra)
-sort!(df_cpra_id, :UPDATE_TM, rev=true)
+df = CSV.read("/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/cleaned_donors.csv", DataFrame)
 
-if (df_id.OUTCOME[1] == "TX") || (df_id.OUTCOME[1] == "1")
-    exp_date = nothing # Si transplanté avec un donneur décédé, aucune date d'expiration et on néglige le temps inactif. Même chose si le patient est toujours actif en attente de transplantation.
-else
-    # Si non transplanté avec un donneur décédé, on prend la dernière date d'attente active pour calculer la date d'expiration
-    ind = findfirst(df_id.OUTCOME .== "1")
-    if ind !== nothing
-        d = round(Int64, KidneyAllocation.days_between(df_id.UPDATE_TM[end], df_id.UPDATE_TM[ind-1]))
-        exp_date = df_id.UPDATE_TM[end] + Day(d)
-    else # Le patient a été inscrit mais n'a jamais été actif.
-        exp_date = df_id.UPDATE_TM[end]
-    end
+df.WEIGHT[df.WEIGHT.≈0.] .= 80.
+df.HEIGHT[df.HEIGHT.≈0.] .= 170.
 
-end
+don_id = unique(df.DON_ID)
 
-birth = df_id.CAN_BTH_DT[1]
-dialysis = df_id.CAN_DIAL_DT[1]
-arrival = df_id.CAN_LISTING_DT[1]
-blood = KidneyAllocation.parse_abo(df_id.CAN_BLOOD[1])
-a1 = df_id.CAN_A1[1]
-a2 = df_id.CAN_A2[1]
-b1 = df_id.CAN_B1[1]
-b2 = df_id.CAN_B2[1]
-dr1 = df_id.CAN_DR1[1]
-dr2 = df_id.CAN_DR2[1]
+id = 487
 
-if isempty(df_cpra_id)
-    cpra = 0 # Si le CPRA est manquant, on prend 0. 
-else
-    cpra = round(Int64, df_cpra_id.CAN_CPRA[end]) # S'il y a plusieurs CPRA, on prend le plus récent.
-end
+ind = findfirst(df.DON_ID .== id)
 
-r = Recipient(birth, dialysis, arrival, blood, a1, a2, b1, b2, dr1, dr2, cpra, expiration_date=exp_date)
+age = df.DON_AGE[ind]
+height = df.HEIGHT[ind]
+weight = df.WEIGHT[ind]
+hypertension = df.HYPERTENSION[ind] == 1
+diabetes = df.DIABETES[ind] == 1
+cva = df.DEATH[ind] == 1
+creatinine = creatinine_mgdl(df.CREATININE[ind])
+dcd = df.DCD[ind] .== 2 # TODO À VÉRIFIER si c'est bien 2, sinon c'est 1
+
+kdri = evaluate_kdri(age, height, weight, hypertension, diabetes, cva, creatinine, dcd)
+
+arrival = Date(df.DON_DEATH_TM[ind])
+age = df.DON_AGE[ind]
+blood = KidneyAllocation.parse_abo(df.DON_BLOOD[ind])
+
+a1 = df.DON_A1[ind]
+a2 = df.DON_A2[ind]
+b1 = df.DON_B1[ind]
+b2 = df.DON_B2[ind]
+dr1 = df.DON_DR1[ind]
+dr2 = df.DON_DR2[ind]
+
+d = Donor(arrival, age, blood, a1, a2, b1, b2, dr1, 3, kdri)
 
 
+donors = Donor[]
 
+for id in don_id
 
+    ind = findfirst(df.DON_ID .== id)
 
+    age = df.DON_AGE[ind]
+    height = df.HEIGHT[ind]
+    weight = df.WEIGHT[ind]
+    hypertension = df.HYPERTENSION[ind] == 1
+    diabetes = df.DIABETES[ind] == 1
+    cva = df.DEATH[ind] == 1
+    creatinine = creatinine_mgdl(df.CREATININE[ind])
+    dcd = df.DCD[ind] .== 2 # TODO À VÉRIFIER si c'est bien 2, sinon c'est 1
 
+    kdri = evaluate_kdri(age, height, weight, hypertension, diabetes, cva, creatinine, dcd)
 
+    arrival = Date(df.DON_DEATH_TM[ind])
+    age = df.DON_AGE[ind]
+    blood = KidneyAllocation.parse_abo(df.DON_BLOOD[ind])
 
+    a1 = df.DON_A1[ind]
+    a2 = df.DON_A2[ind]
+    b1 = df.DON_B1[ind]
+    b2 = df.DON_B2[ind]
+    dr1 = df.DON_DR1[ind]
+    dr2 = df.DON_DR2[ind]
 
-using Random, Dates, Test
+    d = Donor(arrival, age, blood, a1, a2, b1, b2, dr1, dr2, kdri)
 
-"""
-    sample_days(d1::Date, d2::Date, n::Integer) -> Vector{Date}
+    push!(donors, d)
 
-Sample `n` dates uniformly (with replacement) between `d1` and `d2` (inclusive).
-"""
-function sample_days(d1::Date, d2::Date, n::Integer)::Vector{Date}
-    dmin, dmax = min(d1, d2), max(d1, d2)
-
-    ndays = Dates.value(dmax - dmin) + 1
-    offsets = sort(rand(0:ndays-1, n))
-
-    return dmin .+ Day.(offsets)
-end
-
-d1 = Date(2000,1,1)
-d2 = Date(2020,12,31)
-
-@time sample_days(d1, d2, 100)
-
-
-@testset "sample_days" begin
-    # --- Basic properties ---
-    d1 = Date(2024, 1, 1)
-    d2 = Date(2024, 1, 10)
-
-    s = sample_days(d1, d2, 10)
-
-    @test length(s) == 10
-    @test all(d -> d1 <= d <= d2, s)
 end
