@@ -75,7 +75,7 @@ struct Donor <: TransplantEntity
         dr2 ∈ VALID_HLA_DR || throw(ArgumentError("Invalid DR allele dr2 = $dr2"))
 
         # Validate age and kdri
-        age > 0 || throw(ArgumentError("Donor age must be > 0, got $age"))
+        age ≥ 0 || throw(ArgumentError("Donor age must be ≥ 0, got $age"))
         kdri > 0 || throw(ArgumentError("KDRI must be > 0, got $kdri"))
 
         return new(arrival, age, blood,

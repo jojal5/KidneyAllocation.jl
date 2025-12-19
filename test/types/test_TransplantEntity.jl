@@ -58,10 +58,7 @@
             dr1, dr2, kdri)
 
         # --- Invalid age ---
-        @test_throws ArgumentError Donor(arrival, 0, blood,
-            a1, a2, b1, b2,
-            dr1, dr2, kdri)
-        @test_throws ArgumentError Donor(arrival, -5, blood,
+        @test_throws ArgumentError Donor(arrival, -1, blood,
             a1, a2, b1, b2,
             dr1, dr2, kdri)
 
