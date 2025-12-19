@@ -321,3 +321,95 @@ Returns true if `dr1` and `dr2` are different; otherwise return `false`.
 is_hetero(t::TransplantEntity) = t.dr1 != t.dr2
 
 
+function Base.show(io::IO, ::MIME"text/plain", donors::AbstractVector{<:Donor})
+    n = length(donors)
+    println(io, "$n-element Vector{Donor}:")
+
+    n == 0 && return
+
+    limit = get(io, :limit, false)
+    rows, _ = displaysize(io)
+    max_lines = max(rows - 1, 1)  # lines available after the header
+
+    # Decide how many elements to show
+    if !limit || n <= max_lines
+        # Show everything
+        for d in donors
+            print(io, " ")
+            summary(io, d)
+            println(io)
+        end
+        return
+    end
+
+    # Long vector display: show head, ellipsis, tail
+    # Reserve 1 line for " ⋮"
+    avail = max_lines - 1
+    head = max(1, avail ÷ 2)
+    tail = max(1, avail - head)
+
+    # Ensure we don't accidentally show all elements when n is small-ish
+    if head + tail >= n
+        head = min(head, n)
+        tail = 0
+    end
+
+    for i in 1:head
+        print(io, " ")
+        summary(io, donors[i])
+        println(io)
+    end
+
+    println(io, " ⋮")
+
+    for i in (n-tail+1):n
+        print(io, " ")
+        summary(io, donors[i])
+        println(io)
+    end
+end
+
+function Base.show(io::IO, ::MIME"text/plain", recipients::AbstractVector{<:Recipient})
+    n = length(recipients)
+    println(io, "$n-element Vector{Recipient}:")
+
+    n == 0 && return
+
+    limit = get(io, :limit, false)
+    rows, _ = displaysize(io)
+    max_lines = max(rows - 1, 1)  # available lines after the header
+
+    if !limit || n <= max_lines
+        # Show everything
+        for r in recipients
+            print(io, " ")
+            summary(io, r)
+            println(io)
+        end
+        return
+    end
+
+    # Long vector display: show head, ellipsis, tail
+    avail = max_lines - 1          # reserve one line for " ⋮"
+    head = max(1, avail ÷ 2)
+    tail = max(1, avail - head)
+
+    if head + tail >= n
+        head = min(head, n)
+        tail = 0
+    end
+
+    for i in 1:head
+        print(io, " ")
+        summary(io, recipients[i])
+        println(io)
+    end
+
+    println(io, " ⋮")
+
+    for i in (n-tail+1):n
+        print(io, " ")
+        summary(io, recipients[i])
+        println(io)
+    end
+end
