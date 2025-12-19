@@ -77,7 +77,7 @@ for id in can_id
         # Si non transplanté avec un donneur décédé, on prend la dernière date d'attente active pour calculer la date d'expiration
         ind = findfirst(df_id.OUTCOME .== "1")
         if ind !== nothing
-            d = round(Int64, KidneyAllocation.days_between(df_id.UPDATE_TM[end], df_id.UPDATE_TM[ind-1]))
+            d = KidneyAllocation.days_between(df_id.UPDATE_TM[end], df_id.UPDATE_TM[ind-1])
             exp_date = df_id.UPDATE_TM[end] + Day(d)
         else # Le patient a été inscrit mais n'a jamais été actif.
             exp_date = df_id.UPDATE_TM[end]
@@ -151,50 +151,11 @@ end
 r = Recipient(birth, dialysis, arrival, blood, a1, a2, b1, b2, dr1, dr2, cpra, expiration_date=exp_date)
 
 
-
-
 """
-    adjust_recipient_dates(recipient::Recipient, arrival::Date)
+    shift_recipient_timeline(recipient::Recipient, new_arrival::Date) -> Recipient
 
-Adjust recipient birth, dialysis and expiration date to the new `arrival` date.
-
-## Details
-
-Adjust the birth, the dialysis and the expiration dates to the new arrival date to match the age and waiting times. 
-"""
-function adjust_recipient_dates(recipient::Recipient, arrival::Date)
-    dif_arrival = round(Int64, KidneyAllocation.days_between(recipient.arrival, arrival))
-    birth = recipient.birth + Day(dif_arrival)
-    dialysis = recipient.dialysis + Day(dif_arrival)
-    if recipient.expiration_date === nothing
-        expiration_date = nothing
-    else
-        expiration_date = recipient.expiration_date + Day(dif_arrival)
-    end
-
-    adjusted_recipient = Recipient(birth,
-                                 dialysis,
-                                 arrival,
-                                 recipient.blood,
-                                 recipient.a1,
-                                 recipient.a2,
-                                 recipient.b1,
-                                 recipient.b2,
-                                 recipient.dr1,
-                                 recipient.dr2,
-                                 recipient.CPRA,
-                                 expiration_date = expiration_date)
-
-    return adjusted_recipient
-
-end
-
-
-
-"""
-    adjust_recipient_dates(recipient::Recipient, arrival::Date)
-
-Shift the recipient's `birth`, `dialysis`, and `expiration_date` so that the recipient's timelines are consistent with a new `arrival` date.
+Shift the recipient's `birth`, `dialysis`, and `expiration_date` so that the
+recipient's timeline is consistent with a new `arrival` date.
 
 ## Details
 
@@ -202,11 +163,11 @@ All dates are shifted by the same number of days: the difference between the
 current `recipient.arrival` and the new `arrival`. This preserves age and
 waiting-time durations relative to the (new) arrival date.
 """
-function adjust_recipient_dates(recipient::Recipient, arrival::Date)::Recipient
-    # Compute signed shift (in days) from old arrival to new arrival
-    shift_days = days_between(recipient.arrival, arrival)  # Int
+function shift_recipient_timeline(recipient::Recipient, new_arrival::Date)::Recipient
+    # Signed shift (in days) from old arrival to new arrival
+    shift_days = KidneyAllocation.days_between(recipient.arrival, new_arrival)
 
-    birth   = recipient.birth   + Day(shift_days)
+    birth    = recipient.birth + Day(shift_days)
     dialysis = recipient.dialysis + Day(shift_days)
 
     expiration_date = recipient.expiration_date === nothing ? nothing :
@@ -214,15 +175,16 @@ function adjust_recipient_dates(recipient::Recipient, arrival::Date)::Recipient
 
     return Recipient(birth,
                      dialysis,
-                     arrival,              # relies on your Date/DateTime outer constructor
+                     new_arrival,
                      recipient.blood,
                      recipient.a1, recipient.a2,
                      recipient.b1, recipient.b2,
                      recipient.dr1, recipient.dr2,
-                     recipient.CPRA;
+                     recipient.cpra;
                      expiration_date = expiration_date)
 end
 
 
 
-adjust_recipient_dates(r, Date(2020,1,1))
+
+shift_recipient_timeline(r, Date(2020,1,1))
