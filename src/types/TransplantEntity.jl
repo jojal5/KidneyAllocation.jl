@@ -233,6 +233,38 @@ function Base.summary(io::IO, r::Recipient)
     )
 end
 
+"""
+    shift_recipient_timeline(recipient::Recipient, new_arrival::Date) -> Recipient
+
+Shift the recipient's `birth`, `dialysis`, and `expiration_date` so that the
+recipient's timeline is consistent with a new `arrival` date.
+
+## Details
+
+All dates are shifted by the same number of days: the difference between the
+current `recipient.arrival` and the new `arrival`. This preserves age and
+waiting-time durations relative to the (new) arrival date.
+"""
+function shift_recipient_timeline(recipient::Recipient, new_arrival::Date)::Recipient
+    # Signed shift (in days) from old arrival to new arrival
+    shift_days = days_between(recipient.arrival, new_arrival)
+
+    birth    = recipient.birth + Day(shift_days)
+    dialysis = recipient.dialysis + Day(shift_days)
+
+    expiration_date = recipient.expiration_date === nothing ? nothing :
+                      recipient.expiration_date + Day(shift_days)
+
+    return Recipient(birth,
+                     dialysis,
+                     new_arrival,
+                     recipient.blood,
+                     recipient.a1, recipient.a2,
+                     recipient.b1, recipient.b2,
+                     recipient.dr1, recipient.dr2,
+                     recipient.cpra;
+                     expiration_date = expiration_date)
+end
 
 """
     has_expiration(r::Recipient)::Bool
