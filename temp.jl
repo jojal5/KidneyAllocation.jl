@@ -118,8 +118,12 @@ import KidneyAllocation: evaluate_kdri, creatinine_mgdl
 
 df = CSV.read("/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/cleaned_donors.csv", DataFrame)
 
+# Si on a une taille et un poids manquant, on remplace par les valeurs moyennes
 df.WEIGHT[df.WEIGHT.≈0.] .= 80.
 df.HEIGHT[df.HEIGHT.≈0.] .= 170.
+
+# On retire les lignes dont l'age est manquant
+
 
 don_id = unique(df.DON_ID)
 
@@ -149,7 +153,7 @@ b2 = df.DON_B2[ind]
 dr1 = df.DON_DR1[ind]
 dr2 = df.DON_DR2[ind]
 
-d = Donor(arrival, age, blood, a1, a2, b1, b2, dr1, 3, kdri)
+d = Donor(arrival, age, blood, a1, a2, b1, b2, dr1, dr2, kdri)
 
 
 donors = Donor[]

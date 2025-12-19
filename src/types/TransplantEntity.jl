@@ -4,17 +4,31 @@ const HLA = UInt16
 
 
 # Valid HLA-A serotypes
-df_HLA_A = CSV.read("src/types/valid_HLA-A.csv", DataFrame)
-const VALID_HLA_A = Set{HLA}(df_HLA_A.VALID_HLA_A)
+const VALID_HLA_A = Set{HLA}(HLA[
+    1, 2, 3, 11, 23, 24, 25, 26,
+    29, 30, 31, 32, 33, 34, 36,
+    66, 68, 69, 74, 80,
+    203, 2403, 3401, 6601
+])
 
 # Valid HLA-B serotypes
-df_HLA_B = CSV.read("src/types/valid_HLA-B.csv", DataFrame)
-const VALID_HLA_B = Set{HLA}(df_HLA_B.VALID_HLA_B)
+const VALID_HLA_B = Set{HLA}(HLA[
+    7, 8, 13, 14, 18, 27, 35,
+    37, 38, 39, 41, 42,
+    44, 45, 46, 47, 48, 49, 50,
+    51, 52, 53, 54, 55, 56, 57, 58,
+    60, 61, 62, 63, 64, 65, 67,
+    70, 71, 72, 73, 75, 76, 77, 78,
+    81, 82,
+    3901, 4402, 4403, 5102, 8201
+])
 
 # Valid HLA-DRB1 serotypes
-df_HLA_DR = CSV.read("src/types/valid_HLA-DR.csv", DataFrame)
-const VALID_HLA_DR = Set{HLA}(df_HLA_DR.VALID_HLA_DR)
-
+const VALID_HLA_DR = Set{HLA}(HLA[
+    1, 3, 4, 7, 8, 9,
+    10, 11, 12, 13, 14, 15, 16, 17, 18,
+    103, 1404
+])
 
 """
     Donor(...) <: TransplantEntity
@@ -249,21 +263,21 @@ function shift_recipient_timeline(recipient::Recipient, new_arrival::Date)::Reci
     # Signed shift (in days) from old arrival to new arrival
     shift_days = days_between(recipient.arrival, new_arrival)
 
-    birth    = recipient.birth + Day(shift_days)
+    birth = recipient.birth + Day(shift_days)
     dialysis = recipient.dialysis + Day(shift_days)
 
     expiration_date = recipient.expiration_date === nothing ? nothing :
                       recipient.expiration_date + Day(shift_days)
 
     return Recipient(birth,
-                     dialysis,
-                     new_arrival,
-                     recipient.blood,
-                     recipient.a1, recipient.a2,
-                     recipient.b1, recipient.b2,
-                     recipient.dr1, recipient.dr2,
-                     recipient.cpra;
-                     expiration_date = expiration_date)
+        dialysis,
+        new_arrival,
+        recipient.blood,
+        recipient.a1, recipient.a2,
+        recipient.b1, recipient.b2,
+        recipient.dr1, recipient.dr2,
+        recipient.cpra;
+        expiration_date=expiration_date)
 end
 
 """
