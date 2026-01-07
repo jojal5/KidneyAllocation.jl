@@ -138,7 +138,7 @@ hypertension = df.HYPERTENSION[ind] == 1
 diabetes = df.DIABETES[ind] == 1
 cva = df.DEATH[ind] == 1
 creatinine = creatinine_mgdl(df.CREATININE[ind])
-dcd = df.DCD[ind] .== 2 # TODO À VÉRIFIER si c'est bien 2, sinon c'est 1
+dcd = df.DCD[ind] .== 1 # TODO À VÉRIFIER si c'est bien 1, sinon c'est 2 (Anastasiay a confirmé le code)
 
 kdri = evaluate_kdri(age, height, weight, hypertension, diabetes, cva, creatinine, dcd)
 
@@ -169,7 +169,7 @@ for id in don_id
     diabetes = df.DIABETES[ind] == 1
     cva = df.DEATH[ind] == 1
     creatinine = creatinine_mgdl(df.CREATININE[ind])
-    dcd = df.DCD[ind] .== 2 # TODO À VÉRIFIER si c'est bien 2, sinon c'est 1
+    dcd = df.DCD[ind] .== 1 # TODO À VÉRIFIER si c'est bien 1, sinon c'est 2 (Anastasiay a confirmé le code)
 
     kdri = evaluate_kdri(age, height, weight, hypertension, diabetes, cva, creatinine, dcd)
 
@@ -189,3 +189,30 @@ for id in don_id
     push!(donors, d)
 
 end
+
+
+function get_arrival(t::TransplantEntity)
+    return t.arrival
+end
+
+get_arrival(recipients[1])
+get_arrival.(recipients)
+
+function get_HLA(t::TransplantEntity)
+    return (t.a1, t.a2, t.b1, t.b2, t.dr1, t.dr2)
+end
+
+get_HLA(recipients[1])
+get_HLA.(recipients)
+
+function get_bloodtype(t::TransplantEntity)
+    return t.blood
+end
+
+get_bloodtype(recipients[1])
+get_bloodtype.(recipients)
+
+
+
+
+
