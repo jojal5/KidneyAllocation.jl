@@ -320,6 +320,34 @@ Returns true if `dr1` and `dr2` are different; otherwise return `false`.
 """
 is_hetero(t::TransplantEntity) = t.dr1 != t.dr2
 
+"""
+    get_arrival(t::TransplantEntity)
+
+Get arrival time of transplant entity `t`.
+"""
+function get_arrival(t::TransplantEntity)
+    return t.arrival
+end
+
+"""
+    get_HLA(t::TransplantEntity)
+
+Get HLA of transplant entity `t` (a1, a2, b1, b2, dr1, dr2).
+"""
+function get_HLA(t::TransplantEntity)
+    return (t.a1, t.a2, t.b1, t.b2, t.dr1, t.dr2)
+end
+
+"""
+    get_bloodtype(t::TransplantEntity)
+
+Get blood type of transplant entity `t`.
+"""
+function get_bloodtype(t::TransplantEntity)
+    return t.blood
+end
+
+
 
 function Base.show(io::IO, ::MIME"text/plain", donors::AbstractVector{<:Donor})
     n = length(donors)

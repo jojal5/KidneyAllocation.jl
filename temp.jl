@@ -191,28 +191,4 @@ for id in don_id
 end
 
 
-function get_arrival(t::TransplantEntity)
-    return t.arrival
-end
-
-get_arrival(recipients[1])
-get_arrival.(recipients)
-
-function get_HLA(t::TransplantEntity)
-    return (t.a1, t.a2, t.b1, t.b2, t.dr1, t.dr2)
-end
-
-get_HLA(recipients[1])
-get_HLA.(recipients)
-
-function get_bloodtype(t::TransplantEntity)
-    return t.blood
-end
-
-get_bloodtype(recipients[1])
-get_bloodtype.(recipients)
-
-
-
-
 

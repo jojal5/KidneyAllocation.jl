@@ -77,9 +77,6 @@
         dialysis = DateTime(2015, 1, 1)
 
         # Valid HLA alleles taken from valid sets:
-        # DR: 1, 4 ∈ VALID_HLA_DR
-        # A: 24, 26 ∈ VALID_HLA_A
-        # B: 44, 51 ∈ VALID_HLA_B
         dr1 = HLA(1)
         dr2 = HLA(4)
         a1 = HLA(24)
@@ -376,5 +373,43 @@
         @test is_hetero(d_hom) == false
     end
 
+    @testset "property extraction" begin
+
+        import KidneyAllocation: get_arrival, get_HLA, get_bloodtype
+
+        arrival = Date(2025, 1, 1)
+
+        dr1 = HLA(1)
+        dr2 = HLA(4)
+        a1 = HLA(24)
+        a2 = HLA(26)
+        b1 = HLA(44)
+        b2 = HLA(51)
+
+        age = 45
+        kdri = 1.5
+        blood = A
+
+        d = Donor(arrival, age, blood,
+            a1, a2, b1, b2,
+            dr1, dr2, kdri)
+
+        @test get_arrival(d) == arrival
+        @test get_HLA(d) == (a1, a2, b1, b2, dr1, dr2)
+        @test get_bloodtype(d) == A
+
+        birth = Date(1980, 1, 1)
+        dialysis = Date(2020,1,1)
+        cpra = 0
+
+        r = Recipient(birth, dialysis, arrival, blood,
+            a1, a2, b1, b2, dr1, dr2,
+            cpra)
+        
+        @test get_arrival(r) == arrival
+        @test get_HLA(r) == (a1, a2, b1, b2, dr1, dr2)
+        @test get_bloodtype(r) == A
+
+    end
 
 end

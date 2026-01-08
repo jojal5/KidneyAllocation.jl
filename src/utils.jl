@@ -106,3 +106,9 @@ function creatinine_mgdl(creat_umol_L::Real)
 end
 
 
+    # Parse HLA-like values such as "24", "24L", "24Low" -> 24
+    parse_hla_int(x) = x === missing ? missing :
+        (m = match(r"^\s*(\d+)", String(x));
+         m === nothing ? missing : parse(Int, m.captures[1]))
+
+         

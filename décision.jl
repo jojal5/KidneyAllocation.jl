@@ -52,7 +52,6 @@ filter!(row->row.WEIGHT > 0., donors)
 
 kdri = Float64[]
 
-# r = eachrow(donors)[2]
 for r in eachrow(donors)
 
     age = r.DON_AGE
