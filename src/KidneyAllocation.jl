@@ -6,6 +6,7 @@ module KidneyAllocation
     include("types/TransplantEntity.jl")
     include("AllocationScore/allocationscore.jl")
     include("Quality/quality.jl")
+    include("preprocess.jl")
     include("utils.jl")
 
     export 

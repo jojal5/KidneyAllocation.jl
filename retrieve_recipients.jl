@@ -285,5 +285,5 @@ normalize_outcome("0")
 
 function parse_hla_int_2(s::String)
     m = match(r"^\s*(\d+)", s)
-    return parse(Int, m.captures[1])
+    return parse(Int64, m.captures[1])
 end
