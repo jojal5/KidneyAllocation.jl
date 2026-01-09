@@ -46,7 +46,7 @@ function infer_recipient_expiration_date(df::AbstractDataFrame)::Union{Date,Noth
     # Sort the dataframe lines so that the most recent is on top
     idx = sortperm(df.UPDATE_TM; rev=true)
     outcomes = uppercase.(String.(df.OUTCOME[idx]))
-    updates  = df.UPDATE_TM[idx]
+    updates = df.UPDATE_TM[idx]
 
     if outcomes[1] == "TX" || outcomes[1] == "1" # If the recipient has been transplanted or still active, then there is no expiration date.
         return nothing
@@ -55,7 +55,7 @@ function infer_recipient_expiration_date(df::AbstractDataFrame)::Union{Date,Noth
         if ind_active === nothing # Recipient was never active
             return updates[end]   # oldest date
         else
-            return updates[ind_active - 1] # # Si non transplanté avec un donneur décédé, on prend la dernière date d'attente active pour calculer la date d'expiration
+            return updates[ind_active-1] # # Si non transplanté avec un donneur décédé, on prend la dernière date d'attente active pour calculer la date d'expiration
         end
     end
 end
@@ -100,60 +100,163 @@ function load_recipient(filepath::String)
 
 end
 
-function construct_recipient_database(recipient_filepath::String, cpra_filepath::String)
+"""
+    build_last_cpra_registry(cpra_filepath::String) -> Dict{CAN_ID, Int64}
 
+Build a dictionary mapping each recipient (`CAN_ID`) to their most recent calculated Panel Reactive Antibody (cPRA) value.
+
+## Details
+- The CPRA file is read from `cpra_filepath`.
+- Rows with missing `CAN_ID` or `CAN_CPRA` are discarded.
+- If a patient has many CPRA values, the most recent is retained (by update time according to UPDATE_TM)
+- CPRA values are rounded to the nearest integer and returned as `Int64`.
+
+## Returns
+A dictionary mapping `CAN_ID` to the most recent CPRA value.
+"""
+function build_last_cpra_registry(cpra_filepath::String)
+
+    df_cpra = CSV.read(cpra_filepath, DataFrame; missingstring=["-", "", "NULL"])
+
+    ("CAN_ID" in names(df_cpra))   || throw(ArgumentError("Missing column :CAN_ID in CPRA file"))
+    ("UPDATE_TM" in names(df_cpra)) || throw(ArgumentError("Missing column :UPDATE_TM in CPRA file"))
+    ("CAN_CPRA" in names(df_cpra)) || throw(ArgumentError("Missing column :CAN_CPRA in CPRA file"))
+
+    # Drop rows missing the essentials
+    dropmissing!(df_cpra, [:CAN_ID, :CAN_CPRA, :UPDATE_TM])
+
+    cpra_by_CAN_ID = Dict{eltype(df_cpra.CAN_ID),Int64}()
+
+    for g in groupby(df_cpra, :CAN_ID)
+        sort!(g, :UPDATE_TM, rev=true)  # most recent first
+        cpra_by_CAN_ID[g.CAN_ID[1]] = Int64(round(g.CAN_CPRA[1]))
+    end
+
+    return cpra_by_CAN_ID
+end
+
+function build_recipient_registry(recipient_filepath::String, cpra_filepath::String)::Vector{Recipient}
     df = load_recipient(recipient_filepath)
-    df_cpra = CSV.read(cpra_filepath, DataFrame)
+    df_cpra = CSV.read(cpra_filepath, DataFrame; missingstring=["-", "", "NULL"])
 
-    select!(df, Not(:NB_PAST_TRANS))
-    dropmissing!(df)
+    # Keep only rows with required fields
+    required = Symbol[
+        :CAN_ID, :UPDATE_TM, :OUTCOME,
+        :CAN_BTH_DT, :CAN_DIAL_DT, :CAN_LISTING_DT,
+        :CAN_BLOOD, :CAN_A1, :CAN_A2, :CAN_B1, :CAN_B2, :CAN_DR1, :CAN_DR2
+    ]
+    dropmissing!(df, required)
+
+    # Compute most recent CPRA per CAN_ID
+    cpra_by_id = Dict{eltype(df.CAN_ID),Int64}()
+
+    if (:CAN_ID in names(df_cpra)) && (:CAN_CPRA in names(df_cpra))
+        if :UPDATE_TM in names(df_cpra)
+            dropmissing!(df_cpra, [:CAN_ID, :CAN_CPRA, :UPDATE_TM])
+            for g in groupby(df_cpra, :CAN_ID)
+                sort!(g, :UPDATE_TM, rev=true)  # most recent first
+                cpra_by_id[g.CAN_ID[1]] = Int64(round(g.CAN_CPRA[1]))
+            end
+        else
+            dropmissing!(df_cpra, [:CAN_ID, :CAN_CPRA])
+            for g in groupby(df_cpra, :CAN_ID)
+                cpra_by_id[g.CAN_ID[1]] = Int64(round(g.CAN_CPRA[end]))
+            end
+        end
+    end
+    # ------------------------------------------------
 
     recipients = Recipient[]
 
-    for id in unique(df.CAN_ID)
+    for g in groupby(df, :CAN_ID)
+        # Infer expiration date from the status history (helper sorts internally)
+        exp_date = infer_recipient_expiration_date(g)
 
-        df_id = filter(row -> row.CAN_ID == id, df)
-        sort!(df_id, :UPDATE_TM, rev=true)
+        # Sort once here for consistent "most recent" row selection
+        sort!(g, :UPDATE_TM, rev=true)
 
-        df_cpra_id = filter(row -> row.CAN_ID == id, df_cpra)
-        sort!(df_cpra_id, :UPDATE_TM, rev=true)
+        id = g.CAN_ID[1]
 
-        if (df_id.OUTCOME[1] == "TX") || (df_id.OUTCOME[1] == "1")
-            exp_date = nothing # Si transplanté avec un donneur décédé, aucune date d'expiration et on néglige le temps inactif. Même chose si le patient est toujours actif en attente de transplantation.
-        else
-            # Si non transplanté avec un donneur décédé, on prend la dernière date d'attente active pour calculer la date d'expiration
-            ind = findfirst(df_id.OUTCOME .== "1")
-            if ind !== nothing
-                d = KidneyAllocation.days_between(df_id.UPDATE_TM[end], df_id.UPDATE_TM[ind-1])
-                exp_date = df_id.UPDATE_TM[end] + Day(d)
-            else # Le patient a été inscrit mais n'a jamais été actif.
-                exp_date = df_id.UPDATE_TM[end]
-            end
+        birth = g.CAN_BTH_DT[1]
+        dialysis = g.CAN_DIAL_DT[1]
+        arrival = g.CAN_LISTING_DT[1]
 
-        end
+        blood = KidneyAllocation.parse_abo(String(g.CAN_BLOOD[1]))
 
-        birth = df_id.CAN_BTH_DT[1]
-        dialysis = df_id.CAN_DIAL_DT[1]
-        arrival = df_id.CAN_LISTING_DT[1]
-        blood = KidneyAllocation.parse_abo(df_id.CAN_BLOOD[1])
-        a1 = df_id.CAN_A1[1]
-        a2 = df_id.CAN_A2[1]
-        b1 = df_id.CAN_B1[1]
-        b2 = df_id.CAN_B2[1]
-        dr1 = df_id.CAN_DR1[1]
-        dr2 = df_id.CAN_DR2[1]
+        a1, a2 = g.CAN_A1[1], g.CAN_A2[1]
+        b1, b2 = g.CAN_B1[1], g.CAN_B2[1]
+        dr1, dr2 = g.CAN_DR1[1], g.CAN_DR2[1]
 
-        if isempty(df_cpra_id)
-            cpra = 0 # Si le CPRA est manquant, on prend 0. 
-        else
-            cpra = round(Int64, df_cpra_id.CAN_CPRA[end]) # S'il y a plusieurs CPRA, on prend le plus récent.
-        end
+        cpra = get(cpra_by_id, id, 0)
 
-        r = Recipient(birth, dialysis, arrival, blood, a1, a2, b1, b2, dr1, dr2, cpra, expiration_date=exp_date)
-
-        push!(recipients, r)
+        push!(recipients,
+            Recipient(birth, dialysis, arrival, blood,
+                a1, a2, b1, b2, dr1, dr2, cpra;
+                expiration_date=exp_date))
     end
 
     return recipients
-
 end
+
+
+
+
+
+
+# function construct_recipient_database(recipient_filepath::String, cpra_filepath::String)
+
+#     df = load_recipient(recipient_filepath)
+#     df_cpra = CSV.read(cpra_filepath, DataFrame)
+
+#     select!(df, Not(:NB_PAST_TRANS))
+#     dropmissing!(df)
+
+#     recipients = Recipient[]
+
+#     for id in unique(df.CAN_ID)
+
+#         df_id = filter(row -> row.CAN_ID == id, df)
+#         sort!(df_id, :UPDATE_TM, rev=true)
+
+#         df_cpra_id = filter(row -> row.CAN_ID == id, df_cpra)
+#         sort!(df_cpra_id, :UPDATE_TM, rev=true)
+
+#         if (df_id.OUTCOME[1] == "TX") || (df_id.OUTCOME[1] == "1")
+#             exp_date = nothing # Si transplanté avec un donneur décédé, aucune date d'expiration et on néglige le temps inactif. Même chose si le patient est toujours actif en attente de transplantation.
+#         else
+#             # Si non transplanté avec un donneur décédé, on prend la dernière date d'attente active pour calculer la date d'expiration
+#             ind = findfirst(df_id.OUTCOME .== "1")
+#             if ind !== nothing
+#                 d = KidneyAllocation.days_between(df_id.UPDATE_TM[end], df_id.UPDATE_TM[ind-1])
+#                 exp_date = df_id.UPDATE_TM[end] + Day(d)
+#             else # Le patient a été inscrit mais n'a jamais été actif.
+#                 exp_date = df_id.UPDATE_TM[end]
+#             end
+
+#         end
+
+#         birth = df_id.CAN_BTH_DT[1]
+#         dialysis = df_id.CAN_DIAL_DT[1]
+#         arrival = df_id.CAN_LISTING_DT[1]
+#         blood = KidneyAllocation.parse_abo(df_id.CAN_BLOOD[1])
+#         a1 = df_id.CAN_A1[1]
+#         a2 = df_id.CAN_A2[1]
+#         b1 = df_id.CAN_B1[1]
+#         b2 = df_id.CAN_B2[1]
+#         dr1 = df_id.CAN_DR1[1]
+#         dr2 = df_id.CAN_DR2[1]
+
+#         if isempty(df_cpra_id)
+#             cpra = 0 # Si le CPRA est manquant, on prend 0. 
+#         else
+#             cpra = round(Int64, df_cpra_id.CAN_CPRA[end]) # S'il y a plusieurs CPRA, on prend le plus récent.
+#         end
+
+#         r = Recipient(birth, dialysis, arrival, blood, a1, a2, b1, b2, dr1, dr2, cpra, expiration_date=exp_date)
+
+#         push!(recipients, r)
+#     end
+
+#     return recipients
+
+# end

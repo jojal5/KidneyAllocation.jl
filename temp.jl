@@ -35,6 +35,29 @@ df2 = filter(row -> 2014 ≤ year(row.CAN_LISTING_DT) < 2020, df)
 
 
 
+cpra_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/CandidatesCPRA.csv"
+d = build_last_cpra_registry(cpra_filepath)
+
+
+cpra_filepath = "test/data/candidate_cpra.csv"
+d = build_last_cpra_registry(cpra_filepath)
+
+@test haskey(d, 3)
+@test d[3] == 37
+@test haskey(d, 14)
+@test d[14] == 12
+
+
+
+df_cpra = CSV.read(cpra_filepath, DataFrame; missingstring=["-", "", "NULL"])
+filter!(row->row.CAN_ID ∈ [3, 14], df_cpra)
+CSV.write("candidate_cpra.csv", df_cpra)
+
+
+
+
+
+
 
 
 

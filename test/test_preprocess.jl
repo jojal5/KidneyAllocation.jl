@@ -27,5 +27,18 @@
         
     end
 
+    @testset "build_last_cpra_registry" begin
+        import KidneyAllocation.build_last_cpra_registry
+
+        cpra_filepath = "data/candidate_cpra.csv"
+        d = build_last_cpra_registry(cpra_filepath)
+
+        @test haskey(d, 3)
+        @test d[3] == 37
+        @test haskey(d, 14)
+        @test d[14] == 12
+        
+    end
+
 
 end
