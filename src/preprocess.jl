@@ -137,7 +137,6 @@ end
 
 function build_recipient_registry(recipient_filepath::String, cpra_filepath::String)::Vector{Recipient}
     df = load_recipient(recipient_filepath)
-    df_cpra = CSV.read(cpra_filepath, DataFrame; missingstring=["-", "", "NULL"])
 
     # Keep only rows with required fields
     required = Symbol[
@@ -148,23 +147,7 @@ function build_recipient_registry(recipient_filepath::String, cpra_filepath::Str
     dropmissing!(df, required)
 
     # Compute most recent CPRA per CAN_ID
-    cpra_by_id = Dict{eltype(df.CAN_ID),Int64}()
-
-    if (:CAN_ID in names(df_cpra)) && (:CAN_CPRA in names(df_cpra))
-        if :UPDATE_TM in names(df_cpra)
-            dropmissing!(df_cpra, [:CAN_ID, :CAN_CPRA, :UPDATE_TM])
-            for g in groupby(df_cpra, :CAN_ID)
-                sort!(g, :UPDATE_TM, rev=true)  # most recent first
-                cpra_by_id[g.CAN_ID[1]] = Int64(round(g.CAN_CPRA[1]))
-            end
-        else
-            dropmissing!(df_cpra, [:CAN_ID, :CAN_CPRA])
-            for g in groupby(df_cpra, :CAN_ID)
-                cpra_by_id[g.CAN_ID[1]] = Int64(round(g.CAN_CPRA[end]))
-            end
-        end
-    end
-    # ------------------------------------------------
+    cpra_by_CAN_ID = build_last_cpra_registry(cpra_filepath)
 
     recipients = Recipient[]
 
@@ -187,7 +170,7 @@ function build_recipient_registry(recipient_filepath::String, cpra_filepath::Str
         b1, b2 = g.CAN_B1[1], g.CAN_B2[1]
         dr1, dr2 = g.CAN_DR1[1], g.CAN_DR2[1]
 
-        cpra = get(cpra_by_id, id, 0)
+        cpra = get(cpra_by_CAN_ID, id, 0)
 
         push!(recipients,
             Recipient(birth, dialysis, arrival, blood,
