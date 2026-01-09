@@ -1,7 +1,7 @@
 using KidneyAllocation
 using Test
 
-using Dates
+using CSV, DataFrames, Dates
 
 @testset "KidneyAllocation.jl" begin
     include("test_types.jl")

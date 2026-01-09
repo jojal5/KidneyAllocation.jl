@@ -45,12 +45,8 @@ function load_recipient(filepath::String)
 
     df = CSV.read(filepath, DataFrame, missingstring=["-", "", "NULL"])
 
-    # Replacing the value 24L and 24Low with 24 in CAN_A2 column
-    # parse_hla_int(x) = x === missing ? missing :
-    #                    (v = tryparse(Int, replace(String(x), r"L$" => "")); v === nothing ? missing : v)
-
+    # Replacing the value 24L and 24Low with 24 for instance
     df.CAN_A2 = parse_hla_int.(df.CAN_A2)
-    # ----------------------------------------------------------
 
     # Keeping only the recipients for kidney transplant
     filter!(row -> row.OUTCOME ∈ ("TX", "1", "0", "X", "Dcd", "Tx Vivant"), df)
@@ -280,10 +276,3 @@ normalize_outcome(s) = uppercase(strip(String(s)))
 normalize_outcome("0")
 
 
-
-
-
-function parse_hla_int_2(s::String)
-    m = match(r"^\s*(\d+)", s)
-    return parse(Int64, m.captures[1])
-end

@@ -6,6 +6,40 @@ using Test
 
 using Dates, CSV, DataFrames
 
+
+import KidneyAllocation: load_recipient, infer_recipient_expiration_date, parse_hla_int
+
+filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Candidates.csv"
+
+df = CSV.read(filepath, DataFrame, missingstring=["-", "", "NULL"])
+
+# Load the recipient file
+df = KidneyAllocation.load_recipient(filepath)
+
+
+
+
+
+# Estimate the recipient arrival rate
+df = load_recipient(filepath)
+df2 = filter(row -> 2014 ≤ year(row.CAN_LISTING_DT) < 2020, df)
+λᵣ = length(unique(df2.CAN_ID)) / 6
+
+# Construct the database of recipients
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 df = CSV.read("/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/cleaned_candidates.csv", DataFrame)
 df.CAN_LISTING_DT = Date.(df.CAN_LISTING_DT)
 df.CAN_DIAL_DT = Date.(df.CAN_DIAL_DT)
