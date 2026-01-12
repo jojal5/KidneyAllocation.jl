@@ -25,15 +25,118 @@ df2 = filter(row -> 2014 ≤ year(row.CAN_LISTING_DT) < 2020, df)
 
 
 
-import KidneyAllocation: evaluate_kdri, creatinine_mgdl
+import KidneyAllocation: load_donor, build_donor_registry
 
-df = CSV.read("/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/cleaned_donors.csv", DataFrame)
+filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Donors.csv"
 
-# Si on a une taille et un poids manquant, on remplace par les valeurs moyennes
+df = load_donor(filepath)
+
+dropmissing!(df)
+
+donors = build_donor_registry(filepath)
+
+
+
+
+df = CSV.read(filepath, DataFrame, missingstring=["-", "", "NULL"])
+
+dropmissing!(df, :DECISION)
+filter!(row->row.DECISION == "Acceptation", df)
+
+select!(df, Not([:DON_LAB_DT_TM, :ATT_TYPE, :DECISION, :STATUS]))
+
+
+
 df.WEIGHT[df.WEIGHT.≈0.] .= 80.
 df.HEIGHT[df.HEIGHT.≈0.] .= 170.
 
-# On retire les lignes dont l'age est manquant
+df
+
+dropmissing!(df)
+
+import KidneyAllocation: creatinine_mgdl, evaluate_kdri
+
+donors = Donor[]
+
+for r in eachrow(df)
+
+        age = r.DON_AGE
+        blood = r.DON_BLOOD
+        height = r.HEIGHT
+        weight = r.WEIGHT
+        hypertension = r.HYPERTENSION == 1
+        diabetes = r.DIABETES == 1
+        cva = r.DEATH ∈ [4, 16]
+        creatinine = creatinine_mgdl(r.CREATININE)
+        dcd = r.DCD .== 1 # TODO À VÉRIFIER si c'est bien 1, sinon c'est 2 (Anastasiya a confirmé le code)
+
+        kdri = evaluate_kdri(age, height, weight, hypertension, diabetes, cva, creatinine, dcd)
+
+        arrival = Date(r.DON_DEATH_TM)
+        blood = KidneyAllocation.parse_abo(r.DON_BLOOD)
+
+        a1 = r.DON_A1
+        a2 = r.DON_A2
+        b1 = r.DON_B1
+        b2 = r.DON_B2
+        dr1 = r.DON_DR1
+        dr2 = r.DON_DR2
+
+        d = Donor(arrival, age, blood, a1, a2, b1, b2, dr1, dr2, kdri)
+
+        push!(donors, d)
+
+    end
+
+
+function build_donor_registry(filepath::String)
+
+    df = load_donor(filepath)
+
+    # # Si on a une taille et un poids manquant, on remplace par les valeurs moyennes
+    # df.WEIGHT[df.WEIGHT.≈0.] .= 80.
+    # df.HEIGHT[df.HEIGHT.≈0.] .= 170.
+
+    dropmissing!(df)
+
+    donors = Donor[]
+
+for r in eachrow(df)
+
+        age = r.DON_AGE
+        blood = r.DON_BLOOD
+        height = r.HEIGHT
+        weight = r.WEIGHT
+        hypertension = r.HYPERTENSION == 1
+        diabetes = r.DIABETES == 1
+        cva = r.DEATH ∈ [4, 16]
+        creatinine = creatinine_mgdl(r.CREATININE)
+        dcd = r.DCD .== 1 # TODO À VÉRIFIER si c'est bien 1, sinon c'est 2 (Anastasiya a confirmé le code)
+
+        kdri = evaluate_kdri(age, height, weight, hypertension, diabetes, cva, creatinine, dcd)
+
+        arrival = Date(r.DON_DEATH_TM)
+        blood = KidneyAllocation.parse_abo(r.DON_BLOOD)
+
+        a1 = r.DON_A1
+        a2 = r.DON_A2
+        b1 = r.DON_B1
+        b2 = r.DON_B2
+        dr1 = r.DON_DR1
+        dr2 = r.DON_DR2
+
+        d = Donor(arrival, age, blood, a1, a2, b1, b2, dr1, dr2, kdri)
+
+        push!(donors, d)
+
+    end
+
+end
+
+
+
+
+
 
 
 don_id = unique(df.DON_ID)

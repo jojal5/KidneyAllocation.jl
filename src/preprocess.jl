@@ -61,8 +61,97 @@ function infer_recipient_expiration_date(df::AbstractDataFrame)::Union{Date,Noth
 end
 
 
+"""
+    load_donor(filepath::String) -> DataFrame
 
+Load a CSV file containing donor information and return a cleaned `DataFrame`.
 
+## Details
+Cleaning steps:
+- Remove donors for which the decision status (`DECISION`) is missing.
+- Keep only accepted offers (i.e., `DECISION == "Acceptation"`).
+- Drop administrative columns not required for downstream processing.
+- Replace `WEIGHT = 0`` and `HEIGHT = 0` by `missing`.
+"""
+function load_donor(filepath::String)
+    df = CSV.read(filepath, DataFrame; missingstring=["-", "", "NULL"])
+
+    dropmissing!(df, [:DECISION])
+    filter!(row -> row.DECISION == "Acceptation", df)
+
+    cols_to_drop = [:DON_LAB_DT_TM, :ATT_TYPE, :DECISION, :STATUS]
+    select!(df, Not(cols_to_drop))
+
+    allowmissing!(df, [:WEIGHT, :HEIGHT])
+    df.WEIGHT[df.WEIGHT.≈0.] .= missing
+    df.HEIGHT[df.HEIGHT.≈0.] .= missing
+
+    return df
+end
+
+"""
+    build_donor_registry(filepath::String) -> Vector{Donor}
+
+Construct a registry of `Donor` objects from a CSV file containing donor information.
+
+## Details
+This function loads donor data using [`load_donor`](@ref) and applies the following steps:
+- Removes donors with missing information required for donor characterization and KDRI computation.
+- Computes the Kidney Donor Risk Index (KDRI) for each donor.
+- Constructs a `Donor` object for each valid donor record.
+
+## Notes
+- The donor arrival date is derived from the donor death date (`DON_DEATH_TM`).
+- Binary clinical indicators (hypertension, diabetes, DCD) are inferred from coded values.
+- Rows with incomplete data required for KDRI computation are discarded.
+
+## Returns
+A vector of `Donor` objects representing the donor registry.
+"""
+function build_donor_registry(filepath::String)
+
+    df = load_donor(filepath)
+
+    # Si on a une taille et un poids manquant, on remplace par les valeurs moyennes
+    # df.WEIGHT[df.WEIGHT.≈0.] .= 80.
+    # df.HEIGHT[df.HEIGHT.≈0.] .= 170.
+
+    dropmissing!(df)
+
+    donors = Donor[]
+
+    for r in eachrow(df)
+
+        age = r.DON_AGE
+        height = r.HEIGHT
+        weight = r.WEIGHT
+        hypertension = r.HYPERTENSION == 1
+        diabetes = r.DIABETES == 1
+        cva = r.DEATH ∈ [4, 16]
+        creatinine = creatinine_mgdl(r.CREATININE)
+        dcd = r.DCD == 1 # TODO À VÉRIFIER si c'est bien 1, sinon c'est 2 (Anastasiya a confirmé le code)
+
+        kdri = evaluate_kdri(age, height, weight, hypertension, diabetes, cva, creatinine, dcd)
+
+        arrival = Date(r.DON_DEATH_TM)
+        blood = KidneyAllocation.parse_abo(r.DON_BLOOD)
+
+        a1 = r.DON_A1
+        a2 = r.DON_A2
+        b1 = r.DON_B1
+        b2 = r.DON_B2
+        dr1 = r.DON_DR1
+        dr2 = r.DON_DR2
+
+        d = Donor(arrival, age, blood, a1, a2, b1, b2, dr1, dr2, kdri)
+
+        push!(donors, d)
+
+    end
+
+    return donors
+
+end
 
 
 """
@@ -118,7 +207,7 @@ function build_last_cpra_registry(cpra_filepath::String)
 
     df_cpra = CSV.read(cpra_filepath, DataFrame; missingstring=["-", "", "NULL"])
 
-    ("CAN_ID" in names(df_cpra))   || throw(ArgumentError("Missing column :CAN_ID in CPRA file"))
+    ("CAN_ID" in names(df_cpra)) || throw(ArgumentError("Missing column :CAN_ID in CPRA file"))
     ("UPDATE_TM" in names(df_cpra)) || throw(ArgumentError("Missing column :UPDATE_TM in CPRA file"))
     ("CAN_CPRA" in names(df_cpra)) || throw(ArgumentError("Missing column :CAN_CPRA in CPRA file"))
 
