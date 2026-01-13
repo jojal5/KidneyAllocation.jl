@@ -69,7 +69,7 @@ Load a CSV file containing donor information and return a cleaned `DataFrame`.
 ## Details
 Cleaning steps:
 - Remove donors for which the decision status (`DECISION`) is missing.
-- Keep only accepted offers (i.e., `DECISION == "Acceptation"`).
+- Keep only donors attributed to List 5 (Administrative to Transplant Québec).
 - Drop administrative columns not required for downstream processing.
 - Replace `WEIGHT = 0`` and `HEIGHT = 0` by `missing`.
 """
@@ -77,9 +77,11 @@ function load_donor(filepath::String)
     df = CSV.read(filepath, DataFrame; missingstring=["-", "", "NULL"])
 
     dropmissing!(df, [:DECISION])
-    filter!(row -> row.DECISION == "Acceptation", df)
 
-    cols_to_drop = [:DON_LAB_DT_TM, :ATT_TYPE, :DECISION, :STATUS]
+    # Only attribution type 5
+    filter!(row -> row.ATT_TYPE == 5, df)
+
+    cols_to_drop = [:DON_LAB_DT_TM, :ATT_TYPE, :STATUS]
     select!(df, Not(cols_to_drop))
 
     allowmissing!(df, [:WEIGHT, :HEIGHT])
@@ -104,6 +106,7 @@ This function loads donor data using [`load_donor`](@ref) and applies the follow
 - The donor arrival date is derived from the donor death date (`DON_DEATH_TM`).
 - Binary clinical indicators (hypertension, diabetes, DCD) are inferred from coded values.
 - Rows with incomplete data required for KDRI computation are discarded.
+- Keep only accepted offers (i.e., `DECISION == "Acceptation"`).
 
 ## Returns
 A vector of `Donor` objects representing the donor registry.
@@ -111,6 +114,9 @@ A vector of `Donor` objects representing the donor registry.
 function build_donor_registry(filepath::String)
 
     df = load_donor(filepath)
+
+    # Only consideing accepted offers to avois duplication
+    filter!(row -> row.DECISION == "Acceptation", df)
 
     # Si on a une taille et un poids manquant, on remplace par les valeurs moyennes
     # df.WEIGHT[df.WEIGHT.≈0.] .= 80.
@@ -269,66 +275,3 @@ function build_recipient_registry(recipient_filepath::String, cpra_filepath::Str
 
     return recipients
 end
-
-
-
-
-
-
-# function construct_recipient_database(recipient_filepath::String, cpra_filepath::String)
-
-#     df = load_recipient(recipient_filepath)
-#     df_cpra = CSV.read(cpra_filepath, DataFrame)
-
-#     select!(df, Not(:NB_PAST_TRANS))
-#     dropmissing!(df)
-
-#     recipients = Recipient[]
-
-#     for id in unique(df.CAN_ID)
-
-#         df_id = filter(row -> row.CAN_ID == id, df)
-#         sort!(df_id, :UPDATE_TM, rev=true)
-
-#         df_cpra_id = filter(row -> row.CAN_ID == id, df_cpra)
-#         sort!(df_cpra_id, :UPDATE_TM, rev=true)
-
-#         if (df_id.OUTCOME[1] == "TX") || (df_id.OUTCOME[1] == "1")
-#             exp_date = nothing # Si transplanté avec un donneur décédé, aucune date d'expiration et on néglige le temps inactif. Même chose si le patient est toujours actif en attente de transplantation.
-#         else
-#             # Si non transplanté avec un donneur décédé, on prend la dernière date d'attente active pour calculer la date d'expiration
-#             ind = findfirst(df_id.OUTCOME .== "1")
-#             if ind !== nothing
-#                 d = KidneyAllocation.days_between(df_id.UPDATE_TM[end], df_id.UPDATE_TM[ind-1])
-#                 exp_date = df_id.UPDATE_TM[end] + Day(d)
-#             else # Le patient a été inscrit mais n'a jamais été actif.
-#                 exp_date = df_id.UPDATE_TM[end]
-#             end
-
-#         end
-
-#         birth = df_id.CAN_BTH_DT[1]
-#         dialysis = df_id.CAN_DIAL_DT[1]
-#         arrival = df_id.CAN_LISTING_DT[1]
-#         blood = KidneyAllocation.parse_abo(df_id.CAN_BLOOD[1])
-#         a1 = df_id.CAN_A1[1]
-#         a2 = df_id.CAN_A2[1]
-#         b1 = df_id.CAN_B1[1]
-#         b2 = df_id.CAN_B2[1]
-#         dr1 = df_id.CAN_DR1[1]
-#         dr2 = df_id.CAN_DR2[1]
-
-#         if isempty(df_cpra_id)
-#             cpra = 0 # Si le CPRA est manquant, on prend 0. 
-#         else
-#             cpra = round(Int64, df_cpra_id.CAN_CPRA[end]) # S'il y a plusieurs CPRA, on prend le plus récent.
-#         end
-
-#         r = Recipient(birth, dialysis, arrival, blood, a1, a2, b1, b2, dr1, dr2, cpra, expiration_date=exp_date)
-
-#         push!(recipients, r)
-#     end
-
-#     return recipients
-
-# end

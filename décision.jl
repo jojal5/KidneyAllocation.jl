@@ -61,7 +61,7 @@ for r in eachrow(donors)
     diabetes = r.DIABETES == 1
     cva = (r.DEATH == 4) || (r.DEATH ==16)
     creatinine = KidneyAllocation.creatinine_mgdl(r.CREATININE)
-    dcd = df.DCD[ind] .== 1 # TODO À VÉRIFIER si c'est bien 1, sinon c'est 2 (Anastasiay a confirmé le code)
+    dcd = r.DCD .== 1 # TODO À VÉRIFIER si c'est bien 1, sinon c'est 2 (Anastasiay a confirmé le code)
 
     kdri_r = KidneyAllocation.evaluate_kdri(age, height, weight, hypertension, diabetes, cva, creatinine, dcd)
 
@@ -197,8 +197,6 @@ fm = glm(@formula(DECISION ~ LOG_KDRI + CAN_WAIT + SQUARE_CAN_WAIT + CAN_AGE + S
 θ̂ = predict(fm)
 auc(gt, θ̂)
 
-
-
 fm = glm(@formula(DECISION ~ LOG_KDRI + CAN_WAIT + CAN_AGE + CAN_WAIT*SQUARE_CAN_AGE + SQUARE_CAN_AGE + SQUARE_CAN_AGE*KDRI + CAN_BLOOD), data, Bernoulli(), LogitLink())
 θ̂ = predict(fm)
 auc(gt, θ̂)
@@ -214,8 +212,10 @@ auc(gt, θ̂)
 
 
 
-
-fm = glm(@formula(DECISION ~ LOG_KDRI + CAN_WAIT + SQUARE_CAN_WAIT + CAN_AGE + SQUARE_CAN_AGE + CAN_AGE*KDRI + SQUARE_CAN_AGE*KDRI +SQUARE_CAN_AGE*KDRI*SQUARE_CAN_WAIT + CAN_BLOOD), data, Bernoulli(), LogitLink())
+data.LOG_KDRI = log.(data.KDRI)
+data.SQUARE_CAN_WAIT = (data.CAN_WAIT).^2
+data.SQUARE_CAN_AGE = (data.CAN_AGE).^2
+fm = glm(@formula(DECISION ~ LOG_KDRI + CAN_WAIT + SQUARE_CAN_WAIT + CAN_AGE + SQUARE_CAN_AGE + CAN_AGE*KDRI + SQUARE_CAN_AGE*KDRI +SQUARE_CAN_AGE*KDRI*SQUARE_CAN_WAIT + CAN_BLOOD + DON_AGE), data, Bernoulli(), LogitLink())
 θ̂ = predict(fm)
 auc(gt, θ̂)
 
@@ -233,3 +233,99 @@ r = roc(gt, θ̂, u)
 β̂ = coef(fm)
 
 lp = β̂[1]
+
+
+
+
+
+
+import KidneyAllocation: load_donor, load_recipient
+
+donor_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Donors.csv"
+
+donors = load_donor(donor_filepath)
+
+filter!(row->year(row.DON_DEATH_TM) ∈ 2014:2020, donors)
+filter!(row -> row.ATT_TYPE == 5, donors)
+
+# columns needed for KDRI computation
+VAR_KDRI = [:DON_AGE, :HEIGHT, :WEIGHT, :HYPERTENSION, :DIABETES, :DEATH, :CREATININE, :DCD]
+
+dropmissing!(donors, VAR_KDRI)
+
+kdri = Float64[]
+
+for r in eachrow(donors)
+
+    age = r.DON_AGE
+    height = r.HEIGHT
+    weight = r.WEIGHT
+    hypertension = r.HYPERTENSION == 1
+    diabetes = r.DIABETES == 1
+    cva = (r.DEATH == 4) || (r.DEATH ==16)
+    creatinine = KidneyAllocation.creatinine_mgdl(r.CREATININE)
+    dcd = r.DCD == 1 # TODO À VÉRIFIER si c'est bien 1, sinon c'est 2 (Anastasiay a confirmé le code)
+
+    kdri_r = KidneyAllocation.evaluate_kdri(age, height, weight, hypertension, diabetes, cva, creatinine, dcd)
+
+    push!(kdri, kdri_r)
+end
+
+donors.KDRI = kdri
+
+data = deepcopy(donors)
+
+
+
+
+
+filename = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Candidates.csv"
+
+recipients = load_recipient(filename)
+
+# select!(candidates, :CAN_ID, :CAN_BTH_DT, :CAN_BLOOD, :CAN_DIAL_DT)
+
+age = Int64[]
+waittime = Union{Float64, Missing}[]
+blood = String[]
+
+r = eachrow(data)[6]
+for r in eachrow(data)
+
+    ind = findfirst(recipients.CAN_ID .== r.CAN_ID)
+    
+    if ind === nothing
+        continue
+    else 
+        age_r = KidneyAllocation.years_between(Date(recipients.CAN_BTH_DT[ind]), Date(r.DON_DEATH_TM))
+
+        if ismissing(recipients.CAN_DIAL_DT[ind])
+            waittime_r = missing
+        else
+            waittime_r = KidneyAllocation.fractionalyears_between(Date(recipients.CAN_DIAL_DT[ind]), Date(r.DON_DEATH_TM))
+        end
+            blood_r = recipients.CAN_BLOOD[ind]
+
+        push!(age, age_r)
+        push!(waittime, waittime_r)
+        push!(blood, blood_r)
+end
+
+end
+
+
+
+r = eachrow(data)[6]
+ind = findfirst(recipients.CAN_ID .== r.CAN_ID)
+
+
+recipient_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Candidates.csv"
+
+df = load_recipient(recipient_filepath)
+
+
+
+donor_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Donors.csv"
+
+
+
