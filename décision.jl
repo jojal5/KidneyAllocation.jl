@@ -12,10 +12,10 @@ Compute the area under the ROC curve based on the ground truth `gt` and the succ
 
 See also `roc()` of MLBase.
 """
-function auc(gt::Array{<:Real},scores::Array{<:Real})
+function auc(gt::Array{<:Real}, scores::Array{<:Real})
 
     # Compute the ROC curve for 100 equally spaced thresholds - see `roc()`
-    r = roc(gt, scores, 0:.01:1)
+    r = roc(gt, scores, 0:0.01:1)
 
     # Compute the true positive rate and false positive rate
     tpr = true_positive_rate.(r)
@@ -24,15 +24,15 @@ function auc(gt::Array{<:Real},scores::Array{<:Real})
     # Numerical computation of the area under the ROC curve
     p = sortperm(fpr)
 
-    permute!(tpr,p)
-    permute!(fpr,p)
+    permute!(tpr, p)
+    permute!(fpr, p)
 
     area = 0.0
 
     for i in 2:length(tpr)
         dx = fpr[i] - fpr[i-1]
         dy = tpr[i] - tpr[i-1]
-        area += dx*tpr[i-1] + dx*dy/2
+        area += dx * tpr[i-1] + dx * dy / 2
     end
 
     return area
@@ -42,13 +42,13 @@ end
 filename = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Donors.csv"
 donors = CSV.read(filename, DataFrame, missingstring="NULL")
 
-filter!(row->row.ATT_TYPE == 5, donors)
+filter!(row -> row.ATT_TYPE == 5, donors)
 select!(donors, :DON_ID, :DON_DEATH_TM, :CAN_ID, :DON_AGE, :HEIGHT, :WEIGHT, :HYPERTENSION, :DIABETES, :DEATH, :CREATININE, :DCD, :DECISION)
 
-filter!(row->year(row.DON_DEATH_TM) ∈ 2014:2020, donors)
+filter!(row -> year(row.DON_DEATH_TM) ∈ 2014:2020, donors)
 
 dropmissing!(donors)
-filter!(row->row.WEIGHT > 0., donors)
+filter!(row -> row.WEIGHT > 0., donors)
 
 kdri = Float64[]
 
@@ -59,7 +59,7 @@ for r in eachrow(donors)
     weight = r.WEIGHT
     hypertension = r.HYPERTENSION == 1
     diabetes = r.DIABETES == 1
-    cva = (r.DEATH == 4) || (r.DEATH ==16)
+    cva = (r.DEATH == 4) || (r.DEATH == 16)
     creatinine = KidneyAllocation.creatinine_mgdl(r.CREATININE)
     dcd = r.DCD .== 1 # TODO À VÉRIFIER si c'est bien 1, sinon c'est 2 (Anastasiay a confirmé le code)
 
@@ -78,7 +78,7 @@ candidates = CSV.read(filename, DataFrame, missingstring="NULL")
 select!(candidates, :CAN_ID, :CAN_BTH_DT, :CAN_BLOOD, :CAN_DIAL_DT)
 
 age = Int64[]
-waittime = Union{Float64, Missing}[]
+waittime = Union{Float64,Missing}[]
 blood = String[]
 
 r = eachrow(data)[1]
@@ -92,7 +92,7 @@ for r in eachrow(data)
     else
         waittime_r = KidneyAllocation.fractionalyears_between(Date(candidates.CAN_DIAL_DT[ind]), Date(r.DON_DEATH_TM))
     end
-        blood_r = candidates.CAN_BLOOD[ind]
+    blood_r = candidates.CAN_BLOOD[ind]
 
     push!(age, age_r)
     push!(waittime, waittime_r)
@@ -110,7 +110,7 @@ data.DECISION = data.DECISION .== "Acceptation"
 using MLBase, Optim
 
 
-filter!(row->row.CAN_WAIT > 0, data)
+filter!(row -> row.CAN_WAIT > 0, data)
 
 gt = Int64.(data.DECISION)
 
@@ -149,60 +149,60 @@ fm = glm(@formula(DECISION ~ LOG_KDRI + CAN_YOUTH + CAN_WAIT + CAN_BLOOD), data,
 θ̂ = predict(fm)
 auc(gt, θ̂)
 
-fm = glm(@formula(DECISION ~ KDRI + CAN_WAIT  + CAN_AGE + CAN_AGE*KDRI + CAN_BLOOD + DON_AGE), data, Bernoulli(), LogitLink())
+fm = glm(@formula(DECISION ~ KDRI + CAN_WAIT + CAN_AGE + CAN_AGE * KDRI + CAN_BLOOD + DON_AGE), data, Bernoulli(), LogitLink())
 θ̂ = predict(fm)
 auc(gt, θ̂)
 
 
-data.SQUARE_CAN_AGE = (data.CAN_AGE).^2
-fm = glm(@formula(DECISION ~ KDRI + CAN_WAIT + CAN_AGE + SQUARE_CAN_AGE + SQUARE_CAN_AGE*KDRI + CAN_BLOOD + DON_AGE), data, Bernoulli(), LogitLink())
+data.SQUARE_CAN_AGE = (data.CAN_AGE) .^ 2
+fm = glm(@formula(DECISION ~ KDRI + CAN_WAIT + CAN_AGE + SQUARE_CAN_AGE + SQUARE_CAN_AGE * KDRI + CAN_BLOOD + DON_AGE), data, Bernoulli(), LogitLink())
 θ̂ = predict(fm)
 auc(gt, θ̂)
 
 # data.SQUARE_CAN_AGE = (data.CAN_AGE).^2
-fm = glm(@formula(DECISION ~ LOG_KDRI + CAN_WAIT + CAN_AGE + SQUARE_CAN_AGE + SQUARE_CAN_AGE*KDRI + CAN_BLOOD + DON_AGE), data, Bernoulli(), LogitLink())
+fm = glm(@formula(DECISION ~ LOG_KDRI + CAN_WAIT + CAN_AGE + SQUARE_CAN_AGE + SQUARE_CAN_AGE * KDRI + CAN_BLOOD + DON_AGE), data, Bernoulli(), LogitLink())
 θ̂ = predict(fm)
 auc(gt, θ̂)
 
-data.SQUARE_CAN_WAIT = (data.CAN_WAIT).^2
-fm = glm(@formula(DECISION ~ LOG_KDRI + CAN_WAIT + SQUARE_CAN_WAIT + CAN_AGE + SQUARE_CAN_AGE + SQUARE_CAN_AGE*KDRI + CAN_BLOOD + DON_AGE), data, Bernoulli(), LogitLink())
+data.SQUARE_CAN_WAIT = (data.CAN_WAIT) .^ 2
+fm = glm(@formula(DECISION ~ LOG_KDRI + CAN_WAIT + SQUARE_CAN_WAIT + CAN_AGE + SQUARE_CAN_AGE + SQUARE_CAN_AGE * KDRI + CAN_BLOOD + DON_AGE), data, Bernoulli(), LogitLink())
 θ̂ = predict(fm)
 auc(gt, θ̂)
 
-fm = glm(@formula(DECISION ~ LOG_KDRI + CAN_WAIT + SQUARE_CAN_WAIT + CAN_AGE + SQUARE_CAN_AGE + SQUARE_CAN_AGE*KDRI +SQUARE_CAN_AGE*KDRI*SQUARE_CAN_WAIT + CAN_BLOOD + DON_AGE), data, Bernoulli(), LogitLink())
+fm = glm(@formula(DECISION ~ LOG_KDRI + CAN_WAIT + SQUARE_CAN_WAIT + CAN_AGE + SQUARE_CAN_AGE + SQUARE_CAN_AGE * KDRI + SQUARE_CAN_AGE * KDRI * SQUARE_CAN_WAIT + CAN_BLOOD + DON_AGE), data, Bernoulli(), LogitLink())
 θ̂ = predict(fm)
 auc(gt, θ̂)
 
-fm = glm(@formula(DECISION ~ LOG_KDRI + CAN_WAIT + SQUARE_CAN_WAIT + CAN_AGE + SQUARE_CAN_AGE + CAN_AGE*KDRI + SQUARE_CAN_AGE*KDRI +SQUARE_CAN_AGE*KDRI*SQUARE_CAN_WAIT + CAN_BLOOD + DON_AGE), data, Bernoulli(), LogitLink())
+fm = glm(@formula(DECISION ~ LOG_KDRI + CAN_WAIT + SQUARE_CAN_WAIT + CAN_AGE + SQUARE_CAN_AGE + CAN_AGE * KDRI + SQUARE_CAN_AGE * KDRI + SQUARE_CAN_AGE * KDRI * SQUARE_CAN_WAIT + CAN_BLOOD + DON_AGE), data, Bernoulli(), LogitLink())
 θ̂ = predict(fm)
 auc(gt, θ̂)
 
-fm = glm(@formula(DECISION ~ LOG_KDRI + CAN_WAIT + SQUARE_CAN_WAIT + CAN_AGE + SQUARE_CAN_AGE + CAN_AGE*KDRI + SQUARE_CAN_AGE*KDRI +SQUARE_CAN_AGE*KDRI*SQUARE_CAN_WAIT + CAN_BLOOD), data, Bernoulli(), LogitLink())
+fm = glm(@formula(DECISION ~ LOG_KDRI + CAN_WAIT + SQUARE_CAN_WAIT + CAN_AGE + SQUARE_CAN_AGE + CAN_AGE * KDRI + SQUARE_CAN_AGE * KDRI + SQUARE_CAN_AGE * KDRI * SQUARE_CAN_WAIT + CAN_BLOOD), data, Bernoulli(), LogitLink())
 θ̂ = predict(fm)
 auc(gt, θ̂)
 
-fm = glm(@formula(DECISION ~ LOG_KDRI + CAN_WAIT + SQUARE_CAN_WAIT + CAN_AGE + SQUARE_CAN_AGE + CAN_AGE*KDRI*CAN_WAIT + SQUARE_CAN_AGE*KDRI*SQUARE_CAN_WAIT + CAN_BLOOD), data, Bernoulli(), LogitLink())
+fm = glm(@formula(DECISION ~ LOG_KDRI + CAN_WAIT + SQUARE_CAN_WAIT + CAN_AGE + SQUARE_CAN_AGE + CAN_AGE * KDRI * CAN_WAIT + SQUARE_CAN_AGE * KDRI * SQUARE_CAN_WAIT + CAN_BLOOD), data, Bernoulli(), LogitLink())
 θ̂ = predict(fm)
 auc(gt, θ̂)
 
-fm = glm(@formula(DECISION ~ LOG_KDRI + CAN_WAIT + SQUARE_CAN_WAIT + CAN_AGE + SQUARE_CAN_AGE + SQUARE_CAN_AGE*KDRI*SQUARE_CAN_WAIT + CAN_BLOOD), data, Bernoulli(), LogitLink())
+fm = glm(@formula(DECISION ~ LOG_KDRI + CAN_WAIT + SQUARE_CAN_WAIT + CAN_AGE + SQUARE_CAN_AGE + SQUARE_CAN_AGE * KDRI * SQUARE_CAN_WAIT + CAN_BLOOD), data, Bernoulli(), LogitLink())
 θ̂ = predict(fm)
 auc(gt, θ̂)
 
-fm = glm(@formula(DECISION ~ LOG_KDRI + CAN_WAIT + SQUARE_CAN_WAIT + CAN_AGE + SQUARE_CAN_AGE + CAN_AGE*LOG_KDRI + SQUARE_CAN_AGE*LOG_KDRI +SQUARE_CAN_AGE*LOG_KDRI*SQUARE_CAN_WAIT + CAN_BLOOD + DON_AGE), data, Bernoulli(), LogitLink())
+fm = glm(@formula(DECISION ~ LOG_KDRI + CAN_WAIT + SQUARE_CAN_WAIT + CAN_AGE + SQUARE_CAN_AGE + CAN_AGE * LOG_KDRI + SQUARE_CAN_AGE * LOG_KDRI + SQUARE_CAN_AGE * LOG_KDRI * SQUARE_CAN_WAIT + CAN_BLOOD + DON_AGE), data, Bernoulli(), LogitLink())
 θ̂ = predict(fm)
 auc(gt, θ̂)
 
-fm = glm(@formula(DECISION ~ LOG_KDRI + CAN_WAIT + SQUARE_CAN_WAIT + CAN_AGE + SQUARE_CAN_AGE + CAN_AGE*LOG_KDRI + SQUARE_CAN_AGE*LOG_KDRI +SQUARE_CAN_AGE*LOG_KDRI*SQUARE_CAN_WAIT + CAN_BLOOD + DON_AGE), data, Bernoulli(), LogitLink())
+fm = glm(@formula(DECISION ~ LOG_KDRI + CAN_WAIT + SQUARE_CAN_WAIT + CAN_AGE + SQUARE_CAN_AGE + CAN_AGE * LOG_KDRI + SQUARE_CAN_AGE * LOG_KDRI + SQUARE_CAN_AGE * LOG_KDRI * SQUARE_CAN_WAIT + CAN_BLOOD + DON_AGE), data, Bernoulli(), LogitLink())
 θ̂ = predict(fm)
 auc(gt, θ̂)
 
-fm = glm(@formula(DECISION ~ LOG_KDRI + CAN_WAIT + CAN_AGE + CAN_WAIT*SQUARE_CAN_AGE + SQUARE_CAN_AGE + SQUARE_CAN_AGE*KDRI + CAN_BLOOD), data, Bernoulli(), LogitLink())
+fm = glm(@formula(DECISION ~ LOG_KDRI + CAN_WAIT + CAN_AGE + CAN_WAIT * SQUARE_CAN_AGE + SQUARE_CAN_AGE + SQUARE_CAN_AGE * KDRI + CAN_BLOOD), data, Bernoulli(), LogitLink())
 θ̂ = predict(fm)
 auc(gt, θ̂)
 
 
-fm = glm(@formula(DECISION ~ KDRI + CAN_WAIT + CAN_AGE + SQUARE_CAN_AGE + SQUARE_CAN_AGE*KDRI + CAN_AGE*KDRI + CAN_BLOOD + DON_AGE), data, Bernoulli(), LogitLink())
+fm = glm(@formula(DECISION ~ KDRI + CAN_WAIT + CAN_AGE + SQUARE_CAN_AGE + SQUARE_CAN_AGE * KDRI + CAN_AGE * KDRI + CAN_BLOOD + DON_AGE), data, Bernoulli(), LogitLink())
 θ̂ = predict(fm)
 auc(gt, θ̂)
 
@@ -213,15 +213,15 @@ auc(gt, θ̂)
 
 
 data.LOG_KDRI = log.(data.KDRI)
-data.SQUARE_CAN_WAIT = (data.CAN_WAIT).^2
-data.SQUARE_CAN_AGE = (data.CAN_AGE).^2
-fm = glm(@formula(DECISION ~ LOG_KDRI + CAN_WAIT + SQUARE_CAN_WAIT + CAN_AGE + SQUARE_CAN_AGE + CAN_AGE*KDRI + SQUARE_CAN_AGE*KDRI +SQUARE_CAN_AGE*KDRI*SQUARE_CAN_WAIT + CAN_BLOOD + DON_AGE), data, Bernoulli(), LogitLink())
+data.SQUARE_CAN_WAIT = (data.CAN_WAIT) .^ 2
+data.SQUARE_CAN_AGE = (data.CAN_AGE) .^ 2
+fm = glm(@formula(DECISION ~ LOG_KDRI + CAN_WAIT + SQUARE_CAN_WAIT + CAN_AGE + SQUARE_CAN_AGE + CAN_AGE * KDRI + SQUARE_CAN_AGE * KDRI + SQUARE_CAN_AGE * KDRI * SQUARE_CAN_WAIT + CAN_BLOOD + DON_AGE), data, Bernoulli(), LogitLink())
 θ̂ = predict(fm)
 auc(gt, θ̂)
 
 fobj(u::Real) = -f1score(roc(gt, θ̂, u))
 
-res = optimize(fobj, .1, .5)
+res = optimize(fobj, 0.1, 0.5)
 
 u = res.minimizer
 
@@ -245,8 +245,7 @@ donor_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-rese
 
 donors = load_donor(donor_filepath)
 
-filter!(row->year(row.DON_DEATH_TM) ∈ 2014:2020, donors)
-filter!(row -> row.ATT_TYPE == 5, donors)
+filter!(row -> year(row.DON_DEATH_TM) ∈ 2014:2019, donors)
 
 # columns needed for KDRI computation
 VAR_KDRI = [:DON_AGE, :HEIGHT, :WEIGHT, :HYPERTENSION, :DIABETES, :DEATH, :CREATININE, :DCD]
@@ -262,7 +261,7 @@ for r in eachrow(donors)
     weight = r.WEIGHT
     hypertension = r.HYPERTENSION == 1
     diabetes = r.DIABETES == 1
-    cva = (r.DEATH == 4) || (r.DEATH ==16)
+    cva = (r.DEATH == 4) || (r.DEATH == 16)
     creatinine = KidneyAllocation.creatinine_mgdl(r.CREATININE)
     dcd = r.DCD == 1 # TODO À VÉRIFIER si c'est bien 1, sinon c'est 2 (Anastasiay a confirmé le code)
 
@@ -283,49 +282,60 @@ filename = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/k
 
 recipients = load_recipient(filename)
 
+filter!(row -> row.CAN_ID ∈ unique(recipients.CAN_ID), data)
+
 # select!(candidates, :CAN_ID, :CAN_BTH_DT, :CAN_BLOOD, :CAN_DIAL_DT)
 
 age = Int64[]
-waittime = Union{Float64, Missing}[]
+waittime = Union{Float64,Missing}[]
 blood = String[]
 
-r = eachrow(data)[6]
 for r in eachrow(data)
 
     ind = findfirst(recipients.CAN_ID .== r.CAN_ID)
-    
-    if ind === nothing
-        continue
-    else 
-        age_r = KidneyAllocation.years_between(Date(recipients.CAN_BTH_DT[ind]), Date(r.DON_DEATH_TM))
 
-        if ismissing(recipients.CAN_DIAL_DT[ind])
-            waittime_r = missing
-        else
-            waittime_r = KidneyAllocation.fractionalyears_between(Date(recipients.CAN_DIAL_DT[ind]), Date(r.DON_DEATH_TM))
-        end
-            blood_r = recipients.CAN_BLOOD[ind]
+    age_r = KidneyAllocation.years_between(Date(recipients.CAN_BTH_DT[ind]), Date(r.DON_DEATH_TM))
 
-        push!(age, age_r)
-        push!(waittime, waittime_r)
-        push!(blood, blood_r)
-end
+    if ismissing(recipients.CAN_DIAL_DT[ind])
+        waittime_r = missing
+    else
+        waittime_r = KidneyAllocation.fractionalyears_between(Date(recipients.CAN_DIAL_DT[ind]), Date(r.DON_DEATH_TM))
+    end
+    blood_r = recipients.CAN_BLOOD[ind]
+
+    push!(age, age_r)
+    push!(waittime, waittime_r)
+    push!(blood, blood_r)
+
 
 end
 
+data.CAN_AGE = age
+data.CAN_WAIT = waittime
+data.CAN_BLOOD = blood
+
+data.DECISION = data.DECISION .== "Acceptation"
+
+using MLBase, Optim
+
+model = @formula(DECISION ~ CAN_AGE*KDRI + CAN_BLOOD + DON_AGE)
+
+fm = glm(model, data, Bernoulli(), LogitLink())
+
+gt = Int64.(data.DECISION)
+
+θ̂ = predict(fm)
+auc(gt, θ̂)
+
+fobj(u::Real) = -f1score(roc(gt, θ̂, u))
+
+res = optimize(fobj, 0.1, 0.5)
+
+u = res.minimizer
+
+r = roc(data.DECISION, θ̂, u)
 
 
-r = eachrow(data)[6]
-ind = findfirst(recipients.CAN_ID .== r.CAN_ID)
 
-
-recipient_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Candidates.csv"
-
-df = load_recipient(recipient_filepath)
-
-
-
-donor_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Donors.csv"
-
-
+# fm = glm(@formula(DECISION ~ LOG_KDRI + CAN_WAIT + SQUARE_CAN_WAIT + CAN_AGE + SQUARE_CAN_AGE + CAN_AGE * KDRI + SQUARE_CAN_AGE * KDRI + SQUARE_CAN_AGE * KDRI * SQUARE_CAN_WAIT + CAN_BLOOD + DON_AGE), data, Bernoulli(), LogitLink())
 
