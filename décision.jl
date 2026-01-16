@@ -55,8 +55,8 @@ fm = glm(model, data, Bernoulli(), LogitLink())
 
 u = fit_decision_threshold(fm)
 
-donor = Donor(Date(2015, 1, 2), 22, B, 3, 29, 7, 44, 7, 13, 0.8190073900205177)
-recipient = Recipient(Date(1958, 12, 19), Date(2007, 3, 12), Date(2008, 3, 14), B,
+donor = Donor(Date(2010, 1, 1), 22, B, 3, 29, 7, 44, 7, 13, 0.8190073900205177)
+recipient = Recipient(Date(1953, 10, 20), Date(2002, 4, 21), Date(2003, 4, 10), B,
     2, 23, 45, 65, 11, 16,
     0)
 
