@@ -127,3 +127,114 @@ r = filter(x->!is_expired(x, Date(2024,1,1)), waiting_recipients)
 arr = KidneyAllocation.get_arrival.(r)
 
 minimum(arr)
+
+
+
+
+
+eligible_id=Int[]
+empty!(eligible_id)
+sizehint!(eligible_id, length(waiting_recipients))
+
+
+
+
+
+
+import KidneyAllocation.score
+
+function allocate_one_donor!(
+    waiting_recipients::Vector{Recipient},
+    donor::Donor,
+    fm,
+    u;
+    eligible_id::Vector{Int}=Int[],
+    scores::Vector{Float64}=Float64[],
+    perm::Vector{Int}=Int[])
+
+    arrival = donor.arrival
+    donor_bt = donor.blood
+
+    empty!(eligible_id)
+    empty!(scores)
+
+    sizehint!(eligible_id, length(waiting_recipients))
+    sizehint!(scores, length(waiting_recipients))
+
+    @inbounds for i in eachindex(waiting_recipients)
+        r = waiting_recipients[i]
+        is_active(r, arrival) || continue
+        is_abo_compatible(r.blood, donor_bt) || continue
+
+        push!(eligible_id, i)
+        push!(scores, score(donor, r))
+    end
+
+    isempty(eligible_id) && return 0
+
+    # sortperm! with reusable buffer
+    resize!(perm, length(scores))
+    sortperm!(perm, scores; rev=true)
+
+    accepting_id = 0
+    @inbounds for k in perm
+        id = eligible_id[k]
+        if get_decision(donor, waiting_recipients[id], fm, u)
+            accepting_id = id
+            break
+        end
+    end
+
+    # K = min(100, length(scores))
+    # topk = partialsortperm(scores, 1:K; rev=true)
+
+    # accepting_id = 0
+    # @inbounds for k in topk
+    #     id = eligible_id[k]
+    #     if get_decision(donor, waiting_recipients[id], fm, u)
+    #         accepting_id = id
+    #         break
+    #     end
+    # end
+
+    return accepting_id
+end
+
+
+
+@time allocate_one_donor!(waiting_recipients, donor, fm, u)
+
+
+
+@inline function swapdeleteat!(v::Vector, i::Int)
+    @inbounds begin
+        v[i] = v[end]
+        pop!(v)
+    end
+    return v
+end
+
+
+
+eligible_id = Int[]
+scores = Float64[]
+perm = Int[]
+
+n = 0
+
+@time for donor in new_donors
+
+    # If you must drop expired each donor, still do it, but avoid extra work later
+    filter!(r -> !is_expired(r, donor.arrival), waiting_recipients)
+
+    id = allocate_one_donor!(waiting_recipients, donor, fm, u;
+                            eligible_id=eligible_id, scores=scores, perm=perm)
+    if id != 0
+        # deleteat!(waiting_recipients, id)  # see next section for faster option
+        swapdeleteat!(waiting_recipients, id)
+    else
+        n+=1
+    end
+end
+
+n
