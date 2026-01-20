@@ -250,6 +250,40 @@
         @test is_active(r_exp, t_after_exp) == false
     end
 
+    @testset "set_donor_arrival" begin
+
+        import KidneyAllocation: set_donor_arrival
+        # Construct a reference donor
+        arrival = Date(2020, 1, 1)
+        donor = Donor(arrival,
+            45,
+            A,
+            HLA(24), HLA(26),
+            HLA(44), HLA(52),
+            HLA(7), HLA(15),
+            1.23)
+
+        new_arrival = Date(2025, 1, 1)
+
+        donor2 = set_donor_arrival(donor, new_arrival)
+
+        @test donor2.arrival == new_arrival
+
+        # All other fields must remain unchanged
+        @test donor2.age == donor.age
+        @test donor2.blood == donor.blood
+
+        @test donor2.a1 == donor.a1
+        @test donor2.a2 == donor.a2
+        @test donor2.b1 == donor.b1
+        @test donor2.b2 == donor.b2
+        @test donor2.dr1 == donor.dr1
+        @test donor2.dr2 == donor.dr2
+
+        @test donor2.kdri == donor.kdri
+    end
+
+
     @testset "shift_recipient_timeline" begin
         import KidneyAllocation: days_between, shift_recipient_timeline
 
@@ -399,13 +433,13 @@
         @test get_bloodtype(d) == A
 
         birth = Date(1980, 1, 1)
-        dialysis = Date(2020,1,1)
+        dialysis = Date(2020, 1, 1)
         cpra = 0
 
         r = Recipient(birth, dialysis, arrival, blood,
             a1, a2, b1, b2, dr1, dr2,
             cpra)
-        
+
         @test get_arrival(r) == arrival
         @test get_HLA(r) == (a1, a2, b1, b2, dr1, dr2)
         @test get_bloodtype(r) == A

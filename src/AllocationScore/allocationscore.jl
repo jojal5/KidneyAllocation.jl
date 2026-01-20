@@ -103,7 +103,7 @@ function score_wait_time(d::Donor, r::Recipient)
     wait_time = years_between(r.dialysis, d.arrival)
 
     # Cap at highest category
-    if wait_time >= length(scores)
+    if wait_time >= 10
         return scores[end]
     else
         return scores[wait_time + 1]

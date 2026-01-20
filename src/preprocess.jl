@@ -159,22 +159,22 @@ function build_donor_registry(filepath::String)
 
 end
 
-
 """
-    load_recipient(filepath::String)
+    load_recipient(filepath::AbstractString)
 
-Load the CSV file containing recipient information and return a cleaned DataFrame
+Load the CSV file containing recipient information and return a cleaned `DataFrame`.
 
-##Details
+## Details
 
-Here are the cleaning steps:
-- Replacing the value 24L and 24Low with 24 in CAN_A2
-- Keeping only the recipient for kidney transplant, not multi-organs
-- Removing the recipient where the dialysis time or the listing time is missing. It happens for recipient that received a kidney from a living donor.
-- Converting DateTime format to Date
+Cleaning steps:
+- Replace the values `24L` and `24Low` with `24` in `CAN_A2`.
+- Keep only kidney transplant recipients (exclude multi-organ outcomes).
+- Remove recipients with missing dialysis date (`CAN_DIAL_DT`).
+- If listing date is missing, replace it by the dialysis date.
+- If listing date is after dialysis date, replace the listing date by the dialysis date.
+- Convert `DateTime` columns to `Date`.
 """
-function load_recipient(filepath::String)
-
+function load_recipient(filepath::AbstractString)
     df = CSV.read(filepath, DataFrame, missingstring=["-", "", "NULL"])
 
     # Replacing the value 24L and 24Low with 24 for instance
@@ -183,16 +183,21 @@ function load_recipient(filepath::String)
     # Keeping only the recipients for kidney transplant
     filter!(row -> row.OUTCOME ∈ ("TX", "1", "0", "X", "Dcd", "Tx Vivant"), df)
 
-    # Removing the recipient where the dialysis time or the listing time is missing. It happens for recipients that received a kidney from a living donor.
-    dropmissing!(df, [:CAN_LISTING_DT, :CAN_DIAL_DT])
+    # Removing the recipient where the dialysis time is missing. It happens for recipients that received a kidney from a living donor.
+    dropmissing!(df, [:CAN_DIAL_DT])
 
-    # Converting DateTime format to Date
+    # If listing time is missing, replacing it by the dialysis time
+    df.CAN_LISTING_DT = coalesce.(df.CAN_LISTING_DT, df.CAN_DIAL_DT)
+
+    # If listing is before dialysis, set listing = dialysis
+    df.CAN_LISTING_DT = ifelse.(df.CAN_LISTING_DT < df.CAN_DIAL_DT,
+                                df.CAN_DIAL_DT, df.CAN_LISTING_DT)
+
     df.CAN_LISTING_DT = Date.(df.CAN_LISTING_DT)
-    df.CAN_DIAL_DT = Date.(df.CAN_DIAL_DT)
-    df.UPDATE_TM = passmissing(Date).(df.UPDATE_TM)
+    df.CAN_DIAL_DT    = Date.(df.CAN_DIAL_DT)
+    df.UPDATE_TM      = passmissing(Date).(df.UPDATE_TM)
 
     return df
-
 end
 
 """

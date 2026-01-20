@@ -1,5 +1,8 @@
 abstract type TransplantEntity end
 
+# For broadcasting
+Base.broadcastable(x::TransplantEntity) = Ref(x)
+
 const HLA = UInt16
 
 
@@ -246,6 +249,26 @@ function Base.summary(io::IO, r::Recipient)
         "DR=($(r.dr1),$(r.dr2)))"
     )
 end
+
+"""
+    set_donor_arrival(donor::Donor, new_arrival::Date) -> Donor
+
+Return a copy of `donor` with the arrival date replaced by `new_arrival`.
+
+## Details
+
+All other donor attributes (age, blood group, HLA antigens, KDRI) are preserved.
+"""
+function set_donor_arrival(donor::Donor, new_arrival::Date)::Donor
+    return Donor(new_arrival,
+                 donor.age,
+                 donor.blood,
+                 donor.a1, donor.a2,
+                 donor.b1, donor.b2,
+                 donor.dr1, donor.dr2,
+                 donor.kdri)
+end
+
 
 """
     shift_recipient_timeline(recipient::Recipient, new_arrival::Date) -> Recipient
