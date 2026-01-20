@@ -172,6 +172,7 @@ Cleaning steps:
 - Remove recipients with missing dialysis date (`CAN_DIAL_DT`).
 - If listing date is missing, replace it by the dialysis date.
 - If listing date is after dialysis date, replace the listing date by the dialysis date.
+- Keeping only adult recipients (18 years old and older)
 - Convert `DateTime` columns to `Date`.
 """
 function load_recipient(filepath::AbstractString)
@@ -192,6 +193,9 @@ function load_recipient(filepath::AbstractString)
     # If listing is before dialysis, set listing = dialysis
     df.CAN_LISTING_DT = ifelse.(df.CAN_LISTING_DT < df.CAN_DIAL_DT,
                                 df.CAN_DIAL_DT, df.CAN_LISTING_DT)
+
+    # Keeping only adult recipients
+    filter!(row -> years_between(row.CAN_BTH_DT, row.CAN_LISTING_DT) > 17, df)
 
     df.CAN_LISTING_DT = Date.(df.CAN_LISTING_DT)
     df.CAN_DIAL_DT    = Date.(df.CAN_DIAL_DT)

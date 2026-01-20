@@ -5,7 +5,7 @@ using Dates, CSV, DataFrames, Distributions, GLM
 
 using KidneyAllocation
 
-import KidneyAllocation: build_recipient_registry, load_recipient, is_active, is_abo_compatible
+import KidneyAllocation: build_recipient_registry, load_recipient, is_active, is_expired, is_abo_compatible
 import KidneyAllocation: load_donor, build_donor_registry
 import KidneyAllocation: shift_recipient_timeline, set_donor_arrival
 import KidneyAllocation: retrieve_decision_data, fit_decision_threshold, get_decision
@@ -74,7 +74,9 @@ KidneyAllocation.get_arrival.(new_donors)
 
 donor = new_donors[1]
 
-for donor in new_donors
+@time for donor in new_donors
+
+    filter!(x->!is_expired(x, donor.arrival), waiting_recipients)
 
     id_recipient = eachindex(waiting_recipients)
 
@@ -111,3 +113,17 @@ for donor in new_donors
     end
 
 end
+
+KidneyAllocation.is_expired(waiting_recipients[1], Date(204,1,1))
+
+waiting_recipients
+
+is_active.(waiting_recipients, Date(2024,1,1))
+
+waiting_recipients[is_active.(waiting_recipients, Date(2024,1,1))]
+
+r = filter(x->!is_expired(x, Date(2024,1,1)), waiting_recipients)
+
+arr = KidneyAllocation.get_arrival.(r)
+
+minimum(arr)
