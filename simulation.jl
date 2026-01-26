@@ -8,7 +8,7 @@ using KidneyAllocation
 import KidneyAllocation: build_recipient_registry, load_recipient, is_active, is_expired, is_abo_compatible
 import KidneyAllocation: load_donor, build_donor_registry
 import KidneyAllocation: shift_recipient_timeline, set_donor_arrival
-import KidneyAllocation: retrieve_decision_data, fit_decision_threshold, get_decision
+import KidneyAllocation: retrieve_decision_data, fit_decision_threshold
 
 
 
@@ -142,6 +142,26 @@ sizehint!(eligible_id, length(waiting_recipients))
 
 
 import KidneyAllocation.score
+import KidneyAllocation: years_between, fractionalyears_between
+
+@inline blood_str(b::ABOGroup) =
+    b == O ? "O" : b == A ? "A" : b == B ? "B" : "AB"
+
+function get_decision(donor::Donor, recipient::Recipient,
+                      fm::StatsModels.TableRegressionModel, u::Real)::Bool
+    is_abo_compatible(donor.blood, recipient.blood) || return false
+
+    arrival = donor.arrival
+
+    row = (DON_AGE   = donor.age,
+           KDRI      = donor.kdri,
+           CAN_AGE   = years_between(recipient.birth, arrival),
+           CAN_WAIT  = fractionalyears_between(recipient.dialysis, arrival),
+           CAN_BLOOD = blood_str(recipient.blood))
+
+    return predict(fm, (row,))[1] > u
+end
+
 
 function allocate_one_donor!(
     waiting_recipients::Vector{Recipient},
@@ -185,11 +205,58 @@ function allocate_one_donor!(
         end
     end
 
-    # K = min(100, length(scores))
-    # topk = partialsortperm(scores, 1:K; rev=true)
+    return accepting_id
+end
+
+donor = new_donors[1]
+
+arrival = donor.arrival
+donor_bt = donor.blood
+
+n = length(waiting_recipients)
+eligible = falses(n)
+eligible_index = eachindex(waiting_recipients)
+
+is_active.(waiting_recipients, arrival)
+is_abo_compatible.(waiting_recipients, donor_bt)
+
+
+@time @inbounds for i in eachindex(waiting_recipients)
+        r = waiting_recipients[i]
+        eligible[i] = is_active(r, arrival) && is_abo_compatible(r.blood, donor_bt)
+end
+
+n_eligible = count(eligible)
+scores = Vector{Float64}(undef, n)
+
+
+function allocate_one_donor(
+    waiting_recipients::Vector{Recipient},
+    donor::Donor,
+    fm,
+    u)::Int64
+
+    arrival = donor.arrival
+    donor_bt = donor.blood
+
+    n = length(waiting_recipients)
+    eligible_id = falses(n)
+    scores = Vector{Float64}(undef, n)
+
+    @inbounds for i in eachindex(waiting_recipients)
+        r = waiting_recipients[i]
+        eligible_id[i] = is_active(r, arrival) && is_abo_compatible(r.blood, donor_bt)
+    end
+
+
+    # isempty(eligible_id) && return 0
+
+    # # sortperm! with reusable buffer
+    # resize!(perm, length(scores))
+    # sortperm!(perm, scores; rev=true)
 
     # accepting_id = 0
-    # @inbounds for k in topk
+    # @inbounds for k in perm
     #     id = eligible_id[k]
     #     if get_decision(donor, waiting_recipients[id], fm, u)
     #         accepting_id = id
@@ -197,44 +264,80 @@ function allocate_one_donor!(
     #     end
     # end
 
-    return accepting_id
+    # return accepting_id
 end
 
 
 
-@time allocate_one_donor!(waiting_recipients, donor, fm, u)
 
+@time allocate_one_donor!(waiting_recipients, new_donors[1], fm, u)
 
-
-@inline function swapdeleteat!(v::Vector, i::Int)
-    @inbounds begin
-        v[i] = v[end]
-        pop!(v)
-    end
+function swapdeleteat!(v::Vector, i::Int)
+    v[i] = v[end]
+    pop!(v)
     return v
 end
 
 
 
-eligible_id = Int[]
-scores = Float64[]
-perm = Int[]
 
-n = 0
 
-@time for donor in new_donors
+function allocate!(donors::Vector{Donor}, recipients::Vector{Recipient}, fm, u)
 
-    # If you must drop expired each donor, still do it, but avoid extra work later
-    filter!(r -> !is_expired(r, donor.arrival), waiting_recipients)
+    eligible_id = Int[]
+    scores = Float64[]
+    perm = Int[]
 
-    id = allocate_one_donor!(waiting_recipients, donor, fm, u;
-                            eligible_id=eligible_id, scores=scores, perm=perm)
-    if id != 0
-        # deleteat!(waiting_recipients, id)  # see next section for faster option
-        swapdeleteat!(waiting_recipients, id)
-    else
-        n+=1
+    # Counting the non-attributed kidneys.
+    n = 0
+
+    for donor in donors
+
+        # If you must drop expired each donor, still do it, but avoid extra work later
+        filter!(r -> !is_expired(r, donor.arrival), recipients)
+
+        id = allocate_one_donor!(recipients, donor, fm, u;
+                                eligible_id=eligible_id, scores=scores, perm=perm)
+        if id != 0
+            # deleteat!(waiting_recipients, id)  # see next section for faster option
+            swapdeleteat!(recipients, id)
+        else
+            n+=1
+        end
+
+        # return id
     end
 end
 
-n
+
+
+@time allocate!(new_donors, waiting_recipients, fm, u)
+
+
+
+
+function allocate(donors::Vector{Donor}, recipients::Vector{Recipient}, fm, u)
+
+    eligible_id = Int[]
+    scores = Float64[]
+    perm = Int[]
+
+
+
+    for donor in donors
+
+        # If you must drop expired each donor, still do it, but avoid extra work later
+        filter!(r -> !is_expired(r, donor.arrival), recipients)
+
+        id = allocate_one_donor!(recipients, donor, fm, u;
+                                eligible_id=eligible_id, scores=scores, perm=perm)
+        if id != 0
+            # deleteat!(waiting_recipients, id)  # see next section for faster option
+            swapdeleteat!(recipients, id)
+        else
+            n+=1
+        end
+
+        # return id
+    end
+end

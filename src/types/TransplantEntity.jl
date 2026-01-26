@@ -370,6 +370,19 @@ function get_bloodtype(t::TransplantEntity)
     return t.blood
 end
 
+"""
+    is_abo_compatible(donor::Donor, recipient::Recipient)
+
+Returns `true` if the donor is ABO-compatible with the recipient under these kidney allocation rules.
+
+## Details
+
+See @ref(is_abo_compatible(d::ABOGroup, r::ABOGroup)) for ABO-compatibility rules.
+"""
+function is_abo_compatible(donor::Donor, recipient::Recipient)
+    return is_abo_compatible(donor.blood, recipient.blood)
+end
+
 
 
 function Base.show(io::IO, ::MIME"text/plain", donors::AbstractVector{<:Donor})
