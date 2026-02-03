@@ -8,7 +8,7 @@ using KidneyAllocation
 import KidneyAllocation: build_recipient_registry, load_recipient, is_active, is_expired, is_abo_compatible
 import KidneyAllocation: load_donor, build_donor_registry
 import KidneyAllocation: shift_recipient_timeline, set_donor_arrival
-import KidneyAllocation: retrieve_decision_data, fit_decision_threshold
+import KidneyAllocation: retrieve_decision_data, fit_decision_threshold, get_decision
 
 
 
@@ -216,37 +216,74 @@ donor = new_donors[1]
 
 
 
+# function allocate_one_donor(
+#     waiting_recipients::Vector{Recipient},
+#     donor::Donor,
+#     fm,
+#     u)::Int64
+
+#     arrival = donor.arrival
+
+#     eligible = is_active.(waiting_recipients, arrival) .&& is_abo_compatible.(donor, waiting_recipients)
+
+#     eligible_index = findall(eligible)
+
+#     attribution_score = Vector{Float64}(undef, length(eligible_index))
+
+#     for i in eachindex(eligible_index)
+#         attribution_score[i] = score(donor, waiting_recipients[eligible_index[i]])
+#     end
+
+#     ind = sortperm(attribution_score, rev=true)
+
+#     accepting_index = 0
+
+#     for i in eachindex(ind)
+#         if get_decision(donor, waiting_recipients[ind[i]], fm, u)
+#             accepting_index = i
+#             break
+#         end
+#     end
+
+#     return accepting_index
+# end
+
 function allocate_one_donor(
-    waiting_recipients::Vector{Recipient},
+    eligible_recipients::Vector{Recipient},
     donor::Donor,
     fm,
     u)::Int64
 
     arrival = donor.arrival
 
-    eligible = is_active.(waiting_recipients, arrival) .&& is_abo_compatible.(donor, waiting_recipients)
-
-    eligible_index = findall(eligible)
-
-    attribution_score = Vector{Float64}(undef, length(eligible_index))
-
-    for i in eachindex(eligible_index)
-        attribution_score[i] = score(donor, waiting_recipients[eligible_index[i]])
-    end
+    attribution_score = score.(donor, eligible_recipients)
 
     ind = sortperm(attribution_score, rev=true)
 
     accepting_index = 0
 
     for i in eachindex(ind)
-        if get_decision(donor, waiting_recipients[ind[i]], fm, u)
-            accepting_index = i
+        if get_decision(donor, eligible_recipients[ind[i]], fm, u)
+            accepting_index = ind[i]
             break
         end
     end
 
     return accepting_index
 end
+
+
+donor = new_donors[1]
+arrival = donor.arrival
+eligible_index = is_active.(waiting_recipients, arrival) .&& is_abo_compatible.(donor, waiting_recipients)
+eligible_recipients = waiting_recipients[eligible_index]
+allocate_one_donor(eligible_recipients, donor, fm, u)
+
+@time allocate_one_donor(eligible_recipients, donor, fm, u)
+
+
+
+
 
 
 
@@ -257,21 +294,96 @@ function allocate(recipients::Vector{Recipient}, donors::Vector{Donor}, fm, u)
 
     for i in eachindex(donors)
 
-        ind_allocated[i] = allocate_one_donor(recipients[non_allocated_recipients], donors[i], fm, u)
-        non_allocated_recipients[ind_allocated[i]] = false
+        arrival  = donors[i].arrival
+        eligible_id = is_active.(recipients, arrival) .&& is_abo_compatible.(donors[i], recipients) .&& non_allocated_recipients
+        eligible_recipients = recipients[eligible_id]
+
+        ind = findall(eligible_id)
+
+        id = allocate_one_donor(eligible_recipients , donors[i], fm, u)
+
+        if id != 0
+            ind_allocated[i] = ind[id]
+            non_allocated_recipients[ind[id]] = false
+        else
+            ind_allocated[i] = 0
+        end
     end
 
     return ind_allocated
 end
 
-allocate(waiting_recipients, donors, fm, u)
+function allocate_GPT(recipients::Vector{Recipient}, donors::Vector{Donor}, fm, u)
+
+    is_unallocated = trues(length(recipients))                 # BitVector
+    allocated_recipient_index = Vector{Int}(undef, length(donors))
+
+    eligible_mask = falses(length(recipients))                 # reused BitVector
+    eligible_indices = Int[]                                   # reused Vector{Int}
+
+    for donor_idx in eachindex(donors)
+
+        donor = donors[donor_idx]
+        arrival = donor.arrival
+
+        # Build eligibility mask with minimal temporaries
+        eligible_mask .= is_unallocated                         # start from availability
+        eligible_mask .&= is_active.(recipients, arrival)        # active at arrival
+        eligible_mask .&= is_abo_compatible.(donor, recipients)  # ABO compatible
+
+        # Reuse eligible_indices instead of allocating a new vector each time
+        empty!(eligible_indices)
+        append!(eligible_indices, findall(eligible_mask))
+
+        if isempty(eligible_indices)
+            allocated_recipient_index[donor_idx] = 0
+            continue
+        end
+
+        # Find accepting recipient among eligible ones (no slicing recipients[eligible_mask])
+        chosen_recipient = 0
+        for k in eachindex(eligible_indices)
+            r_idx = eligible_indices[k]
+            if get_decision(donor, recipients[r_idx], fm, u)
+                chosen_recipient = r_idx
+                break
+            end
+        end
+
+        if chosen_recipient != 0
+            allocated_recipient_index[donor_idx] = chosen_recipient
+            is_unallocated[chosen_recipient] = false
+        else
+            allocated_recipient_index[donor_idx] = 0
+        end
+    end
+
+    return allocated_recipient_index
+end
+
+
+@time allocate(waiting_recipients, new_donors, fm, u)
+
+@time allocate_GPT(waiting_recipients, new_donors, fm, u)
 
 
 
+donors = new_donors
+recipients = waiting_recipients
 
+non_allocated_recipients = trues(length(recipients))
+ind_allocated = Vector{Int64}(undef, length(donors))
 
+i = 1
+arrival  = donors[i].arrival
+eligible_id = is_active.(recipients, arrival) .&& is_abo_compatible.(donors[i], recipients) .&& non_allocated_recipients
+eligible_recipients = recipients[eligible_id]
 
+@time ind = findall(eligible_id)
 
+id = allocate_one_donor(eligible_recipients , donors[i], fm, u)
+
+ind[id]
 
 
 
