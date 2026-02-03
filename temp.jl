@@ -40,3 +40,12 @@ df = load_donor(filepath)
 df2 = filter(row -> 2014 ≤ year(row.DON_DEATH_TM) < 2020, df)
 filter!(row -> row.DECISION =="Acceptation", df2)
 λₒ = length(unique(df2.CAN_ID)) / 6
+
+
+
+
+function swapdeleteat!(v::Vector, i::Int)
+    v[i] = v[end]
+    pop!(v)
+    return v
+end

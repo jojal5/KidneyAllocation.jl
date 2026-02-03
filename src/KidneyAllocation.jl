@@ -10,6 +10,7 @@ module KidneyAllocation
     include("Quality/quality.jl")
     include("decision.jl")
     include("preprocess.jl")
+    include("simulation.jl")
     include("utils.jl")
 
     export 
