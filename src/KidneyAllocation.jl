@@ -1,6 +1,6 @@
 module KidneyAllocation
 
-    using CSV, DataFrames, Dates, Random
+    using CSV, DataFrames, Dates, Distributions, Random
     using StatsModels # Needed when passing a glm fitted model as a function argument
     using MLBase, Optim
 
