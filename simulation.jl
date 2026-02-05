@@ -1,7 +1,7 @@
 using Pkg
 Pkg.activate(".")
 
-using Dates, CSV, DataFrames, Distributions, GLM, JLD2
+using Dates, CSV, DataFrames, Distributions, GLM, JLD2, Random
 
 using KidneyAllocation
 
@@ -92,32 +92,20 @@ get_decision(new_donors[100], waiting_recipients[ind[100]], fm, u)
 findlast(ind .!= 0)
 
 
-@time r = KidneyAllocation.simulate_initial_recipient_list(recipients, donors, fm, u)
+import KidneyAllocation: generate_arrivals, reconstruct_donors, reconstruct_recipients, simulate_initial_state_indexed
 
 
+@time ind, d = generate_arrivals(eachindex(recipients), 100)
+@time r = recipients[ind]
+@time shift_recipient_timeline.(r, d)
+@time reconstruct_recipients(recipients, ind, d)
 
-r, d = KidneyAllocation.generate_pseudo_history(recipients, donors, fm, u)
+@time ind, d = generate_arrivals(eachindex(donors), 100)
+@time r = donors[ind]
+@time set_donor_arrival.(r, d)
+@time reconstruct_donors(donors, ind, d)
 
-
-
-
-using JLD2
-
-outdir = joinpath(@__DIR__, "src", "SyntheticData")
-
-for i in 1:1000
-    recipient_list, donor_list = KidneyAllocation.generate_pseudo_history(recipients, donors, fm, u)
-    filename = string("sim_", lpad(i, 4, '0') ,".jld2")
-    filepath = joinpath(@__DIR__, outdir, filename)
-    @save filepath recipient_list donor_list
-end
-
-
-
-
-
-
-
-
+@time ind, d = simulate_initial_state_indexed(recipients, donors, fm, u)
+reconstruct_recipients(recipients, ind, d)
 
 

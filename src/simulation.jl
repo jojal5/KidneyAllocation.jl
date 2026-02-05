@@ -10,246 +10,313 @@ sample_arrival_dates(origin::Date, sim_end::Date, n::Integer) =
     KidneyAllocation.sample_days(origin, sim_end, n)
 
 """
-    generate_recipient_arrivals(
-        recipients::Vector{Recipient};
+    generate_arrivals(
+        indices::AbstractVector{<:Int},
+        arrival_rate::Real;
         origin::Date = Date(2000,1,1),
         nyears::Int = 10,
-        arrival_rate::Real = 272.83,
         rng::AbstractRNG = Random.default_rng()
-    ) -> Vector{Recipient}
+    ) -> (Vector{Int}, Vector{Date})
 
-Generate a synthetic sequence of recipient arrivals over a given time horizon.
+Generate a synthetic sequence of arrivals based on a registry of indices.
 
-Arrivals are modeled as a Poisson process with mean `arrival_rate * nyears`.
-Recipient profiles are resampled from `recipients` and their timelines are
-shifted to match simulated arrival dates within [`origin`, `origin + Year(nyears)`].
+This function simulates arrivals over the period
+[`origin`, `origin + Year(nyears)`] by:
 
-# Keyword arguments
-- `rng`: Random number generator used for reproducible simulations.
+1. Drawing the total number of arrivals from a Poisson distribution with mean
+   `arrival_rate * nyears`.
+2. Sampling arrival dates uniformly over the simulation period.
+3. Resampling indices from `indices` to represent arriving entities.
 
-# See also
-- [`generate_donor_arrivals`](@ref)
-- [`generate_pseudo_history`](@ref)
-"""
-function generate_recipient_arrivals(
-    recipients::Vector{Recipient};
-    origin::Date = Date(2000, 1, 1),
-    nyears::Int = 10,
-    arrival_rate::Real = 272.83,
-    rng::AbstractRNG = Random.default_rng(),
-)::Vector{Recipient}
+It returns the sampled registry indices and their corresponding arrival dates,
+which can later be used to reconstruct full objects.
 
-    sim_end = origin + Year(nyears)
+# Arguments
+- `indices::AbstractVector{<:Int}`: Registry indices representing available
+  entities (e.g., recipients or donors).
+- `arrival_rate::Real`: Mean annual arrival rate.
 
-    n_arrivals = rand(rng, Poisson(arrival_rate * nyears))
-    arrival_dates = sample_arrival_dates(origin, sim_end, n_arrivals)
-
-    sampled = rand(rng, recipients, n_arrivals)
-    return KidneyAllocation.shift_recipient_timeline.(sampled, arrival_dates)
-end
-
-"""
-    generate_donor_arrivals(
-        donors::Vector{Donor};
-        origin::Date = Date(2000,1,1),
-        nyears::Int = 10,
-        arrival_rate::Real = 242.0,
-        rng::AbstractRNG = Random.default_rng()
-    ) -> Vector{Donor}
-
-Generate a synthetic sequence of donor arrivals over a given time horizon.
-
-Arrivals are modeled as a Poisson process with mean `arrival_rate * nyears`.
-Donor profiles are resampled from `donors` and their arrival dates are updated
-within [`origin`, `origin + Year(nyears)`].
-
-# Keyword arguments
-- `rng`: Random number generator used for reproducible simulations.
-
-# See also
-- [`generate_recipient_arrivals`](@ref)
-- [`generate_pseudo_history`](@ref)
-"""
-function generate_donor_arrivals(
-    donors::Vector{Donor};
-    origin::Date = Date(2000, 1, 1),
-    nyears::Int = 10,
-    arrival_rate::Real = 242.0,
-    rng::AbstractRNG = Random.default_rng(),
-)::Vector{Donor}
-
-    sim_end = origin + Year(nyears)
-
-    n_arrivals = rand(rng, Poisson(arrival_rate * nyears))
-    arrival_dates = sample_arrival_dates(origin, sim_end, n_arrivals)
-
-    sampled = rand(rng, donors, n_arrivals)
-    return set_donor_arrival.(sampled, arrival_dates)
-end
-
-"""
-    simulate_initial_recipient_list(
-        recipients::Vector{Recipient},
-        donors::Vector{Donor},
-        fm,
-        u;
-        origin::Date = Date(2014,1,1),
-        nyears::Int = 10,
-        donor_rate::Real = 242.0,
-        recipient_rate::Real = 272.83,
-        reference_date::Date = Date(2000,1,1),
-        rng::AbstractRNG = Random.default_rng()
-    ) -> Vector{Recipient}
-
-Simulate the evolution of a kidney transplant waiting list over a fixed horizon
-and return an updated "initial" recipient population.
-
-Workflow:
-1. Keep recipients active at `origin`.
-2. Simulate recipient arrivals and donor arrivals over the next `nyears` years.
-3. Allocate donors sequentially using `allocate(waiting_recipients, new_donors, fm, u)`.
-4. Remove transplanted recipients and then remove recipients inactive at the end.
-5. Shift the timelines of remaining recipients so that the end of the simulation
-   period maps to `reference_date`.
-
-# Keyword arguments
-- `reference_date`: Date used as the new time origin after shifting timelines.
-- `rng`: Random number generator used for reproducibility.
-
-# Notes
-- This function uses resampling from the provided reference pools of recipients
-  and donors to generate synthetic arrivals.
-- If you run large Monte Carlo experiments, consider index-based and buffer-reuse
-  variants to reduce allocations.
-
-# See also
-- [`generate_pseudo_history`](@ref)
-- [`allocate`](@ref)
-"""
-function simulate_initial_recipient_list(
-    recipients::Vector{Recipient},
-    donors::Vector{Donor},
-    fm,
-    u;
-    origin::Date = Date(2014, 1, 1),
-    nyears::Int = 10,
-    donor_rate::Real = 242.0,
-    recipient_rate::Real = 272.83,
-    reference_date::Date = Date(2000, 1, 1),
-    rng::AbstractRNG = Random.default_rng(),
-)::Vector{Recipient}
-
-    sim_end = origin + Year(nyears)
-
-    # Waiting list at origin
-    is_waiting = is_active.(recipients, origin)
-    waiting_recipients = recipients[is_waiting]
-
-    # Add new recipients
-    new_recipients = generate_recipient_arrivals(
-        recipients;
-        origin=origin,
-        nyears=nyears,
-        arrival_rate=recipient_rate,
-        rng=rng,
-    )
-    append!(waiting_recipients, new_recipients)
-
-    # Generate donors
-    new_donors = generate_donor_arrivals(
-        donors;
-        origin=origin,
-        nyears=nyears,
-        arrival_rate=donor_rate,
-        rng=rng,
-    )
-
-    # Allocate donors (uses package allocation policy)
-    allocation_indices = allocate(waiting_recipients, new_donors, fm, u)
-
-    # Remove transplanted recipients (indices refer to `waiting_recipients`)
-    filter!(>(0), allocation_indices)
-    sort!(allocation_indices)
-    deleteat!(waiting_recipients, allocation_indices)
-
-    # Keep only active at end
-    is_active_at_end = is_active.(waiting_recipients, sim_end)
-    active_recipients = waiting_recipients[is_active_at_end]
-
-    # Shift timelines so sim_end becomes reference_date
-    waited_times = sim_end .- KidneyAllocation.get_arrival.(active_recipients)
-    shifted_arrivals = reference_date .- waited_times
-    return shift_recipient_timeline.(active_recipients, shifted_arrivals)
-end
-
-"""
-    generate_pseudo_history(
-        recipients::Vector{Recipient},
-        donors::Vector{Donor},
-        fm,
-        u;
-        origin::Date = Date(2000,1,1),
-        nyears::Int = 10,
-        donor_rate::Real = 242.0,
-        recipient_rate::Real = 272.83,
-        rng::AbstractRNG = Random.default_rng()
-    ) -> (Vector{Recipient}, Vector{Donor})
-
-Generate a synthetic ("pseudo") history consisting of:
-- an initial waiting list (synthetic baseline recipients), and
-- a donor stream over the simulation period.
-
-The initial waiting list is produced by [`simulate_initial_recipient_list`](@ref).
-New recipients and donors are generated over the interval
-[`origin`, `origin + Year(nyears)`] using Poisson arrival models and resampling.
+# Keyword Arguments
+- `origin::Date`: Starting date of the simulation period.
+- `nyears::Int`: Length of the simulation horizon in years.
+- `rng::AbstractRNG`: Random number generator used for reproducibility.
 
 # Returns
-- `(waiting_recipients, new_donors)` where:
-  - `waiting_recipients` includes the synthetic initial recipients plus new
-    recipient arrivals over the period,
-  - `new_donors` are donors with simulated arrival dates over the period.
+- `(sampled_indices, arrival_dates)`:
+    - `sampled_indices::Vector{Int}`: Indices sampled from `indices`.
+    - `arrival_dates::Vector{Date}`: Corresponding simulated arrival dates.
 
-# Keyword arguments
-- `rng`: Random number generator for reproducibility.
+# Modeling Assumptions
+- Arrivals follow a Poisson process.
+- Arrival times are uniformly distributed over the simulation period.
+- Arriving entities are generated by resampling from the registry.
+
+# Performance Notes
+- This function allocates new vectors for indices and dates.
+- It is designed as a lightweight building block for large-scale simulations.
+
+# Reproducibility
+- For reproducible results, pass an explicit RNG:
+
+      rng = MersenneTwister(1234)
+      idx, dates = generate_arrivals(indices, rate; rng=rng)
 
 # See also
-- [`simulate_initial_recipient_list`](@ref)
+- [`simulate_initial_recipient_list_indexed`](@ref)
 - [`generate_recipient_arrivals`](@ref)
 - [`generate_donor_arrivals`](@ref)
 """
-function generate_pseudo_history(
+function generate_arrivals(indices::AbstractVector{<:Int}, arrival_rate::Real;
+    origin::Date = Date(2000, 1, 1),
+    nyears::Int = 10,
+    rng::AbstractRNG = Random.default_rng())
+
+    sim_end = origin + Year(nyears)
+
+    n_arrivals = rand(rng, Poisson(arrival_rate * nyears))
+
+    arrival_dates = KidneyAllocation.sample_arrival_dates(origin, sim_end, n_arrivals)
+    sampled_indices = rand(rng, indices, n_arrivals)
+
+    return sampled_indices, arrival_dates
+
+end
+
+"""
+    reconstruct_recipients(
+        recipients::AbstractVector{Recipient},
+        indices::AbstractVector{<:Integer},
+        arrival_dates::AbstractVector{<:Date}
+    ) -> Vector{Recipient}
+
+Reconstruct a vector of recipients from registry indices and arrival dates.
+
+Each output recipient is created by taking `recipients[indices[i]]` from the
+registry and shifting its timeline to `arrival_dates[i]` using
+`shift_recipient_timeline`.
+
+# Arguments
+- `recipients`: Registry of recipient profiles.
+- `indices`: Indices into `recipients` (1-based).
+- `arrival_dates`: Arrival dates aligned with `indices`.
+
+# Returns
+- `Vector{Recipient}`: Reconstructed recipients with updated timelines.
+
+# Errors
+Throws `ArgumentError` if `indices` and `arrival_dates` do not have the same length.
+"""
+function reconstruct_recipients(
+    recipients::AbstractVector{Recipient},
+    indices::AbstractVector{<:Integer},
+    arrival_dates::AbstractVector{<:Date},
+)::Vector{Recipient}
+
+    length(indices) == length(arrival_dates) ||
+        throw(ArgumentError("`indices` and `arrival_dates` must have the same length"))
+
+    n = length(indices)
+    reconstructed = Vector{Recipient}(undef, n)
+
+    @inbounds for i in 1:n
+        reconstructed[i] = shift_recipient_timeline(recipients[indices[i]], arrival_dates[i])
+    end
+
+    return reconstructed
+end
+
+"""
+    reconstruct_donors(
+        donors::AbstractVector{Donor},
+        indices::AbstractVector{<:Integer},
+        arrival_dates::AbstractVector{<:Date}
+    ) -> Vector{Donor}
+
+Reconstruct a vector of donors from registry indices and arrival dates.
+
+Each output donor is created by taking `donors[indices[i]]` from the registry
+and setting its arrival time to `arrival_dates[i]` using `set_donor_arrival`.
+
+# Arguments
+- `donors`: Registry of donor profiles.
+- `indices`: Indices into `donors` (1-based).
+- `arrival_dates`: Arrival dates aligned with `indices`.
+
+# Returns
+- `Vector{Donor}`: Reconstructed donors with updated arrival times.
+
+# Errors
+Throws `ArgumentError` if `indices` and `arrival_dates` do not have the same length.
+"""
+function reconstruct_donors(
+    donors::AbstractVector{Donor},
+    indices::AbstractVector{<:Integer},
+    arrival_dates::AbstractVector{<:Date},
+)::Vector{Donor}
+
+    length(indices) == length(arrival_dates) ||
+        throw(ArgumentError("`indices` and `arrival_dates` must have the same length"))
+
+    n = length(indices)
+    reconstructed = Vector{Donor}(undef, n)
+
+    @inbounds for i in 1:n
+        reconstructed[i] = set_donor_arrival(donors[indices[i]], arrival_dates[i])
+    end
+
+    return reconstructed
+end
+
+"""
+    simulate_initial_state_indexed(
+        recipients::Vector{Recipient},
+        donors::Vector{Donor},
+        fm,
+        u;
+        start_date::Date = Date(2014,1,1),
+        nyears::Int = 10,
+        donor_rate::Real = 242.0,
+        recipient_rate::Real = 272.83,
+        origin_date::Date = Date(2000,1,1),
+        rng::AbstractRNG = Random.default_rng()
+    ) -> (Vector{Int}, Vector{Date})
+
+Simulate the evolution of a kidney transplant waiting list over a fixed time
+horizon and return the final waiting recipients in indexed form.
+
+This function performs a forward simulation starting at `start_date` and
+spanning `nyears` years. It models recipient and donor arrivals, applies the
+allocation mechanism, and tracks which recipients remain on the waiting list
+at the end of the simulation period.
+
+Internally, the function executes the following steps:
+
+1. Identify recipients active at `start_date`.
+2. Simulate new recipient arrivals using [`generate_arrivals`](@ref).
+3. Simulate donor arrivals using [`generate_arrivals`](@ref).
+4. Reconstruct temporary recipient and donor objects for allocation.
+5. Allocate donors sequentially using [`allocate`](@ref).
+6. Remove transplanted recipients from the waiting list.
+7. Retain only recipients active at `start_date + Year(nyears)`.
+8. Shift recipient arrival dates so that the simulation end corresponds to
+   `origin_date`.
+
+The output is an indexed representation of the final waiting list, which can be
+stored compactly and reconstructed later using
+[`reconstruct_recipients`](@ref).
+
+# Arguments
+- `recipients::Vector{Recipient}`: Registry of recipient profiles.
+- `donors::Vector{Donor}`: Registry of donor profiles.
+- `fm`: Fitted statistical model used in `get_decision` during allocation.
+- `u`: Decision parameter (e.g., acceptance threshold).
+
+# Keyword Arguments
+- `start_date::Date`: Starting date of the simulation window.
+- `nyears::Int`: Length of the simulation horizon in years.
+- `donor_rate::Real`: Mean annual arrival rate of donors.
+- `recipient_rate::Real`: Mean annual arrival rate of recipients.
+- `origin_date::Date`: Reference date used as the new time origin after shifting
+  recipient timelines.
+- `rng::AbstractRNG`: Random number generator used for reproducibility.
+
+# Returns
+- `(final_indices, shifted_arrival_dates)`:
+    - `final_indices::Vector{Int}`: Indices into `recipients` identifying
+      recipients remaining on the waiting list at the end of the simulation.
+    - `shifted_arrival_dates::Vector{Date}`: Arrival dates aligned with
+      `final_indices`, shifted so that the end of the simulation period maps to
+      `origin_date`.
+
+# Modeling Assumptions
+- Recipient and donor arrivals follow independent Poisson processes.
+- Arrival times are uniformly distributed over the simulation period.
+- New individuals are generated by resampling from the registry.
+- Each recipient can be transplanted at most once.
+- Allocation decisions are made sequentially in donor order.
+
+# Performance Notes
+- The function avoids storing full recipient and donor objects in the output,
+  returning only indices and dates for compact storage.
+- Temporary objects are reconstructed only for allocation.
+- Broadcasting and reconstruction allocate temporary arrays; for very large
+  Monte Carlo studies, in-place variants may be preferable.
+
+# Reproducibility
+- For reproducible simulations, pass an explicit RNG:
+
+      rng = MersenneTwister(1234)
+      idx, dates = simulate_initial_state_indexed(...; rng=rng)
+
+# See also
+- [`generate_arrivals`](@ref)
+- [`allocate`](@ref)
+- [`reconstruct_recipients`](@ref)
+- [`reconstruct_donors`](@ref)
+"""
+function simulate_initial_state_indexed(
     recipients::Vector{Recipient},
     donors::Vector{Donor},
     fm,
     u;
-    origin::Date = Date(2000, 1, 1),
+    start_date::Date = Date(2014, 1, 1),
     nyears::Int = 10,
     donor_rate::Real = 242.0,
     recipient_rate::Real = 272.83,
+    origin_date::Date = Date(2000, 1, 1),
     rng::AbstractRNG = Random.default_rng(),
 )
-    initial_recipients = simulate_initial_recipient_list(
-        recipients, donors, fm, u;
-        rng=rng,
-    )
 
-    new_recipients = generate_recipient_arrivals(
-        recipients;
-        origin=origin,
-        nyears=nyears,
-        arrival_rate=recipient_rate,
-        rng=rng,
-    )
+    simulation_end = start_date + Year(nyears)
 
-    waiting_recipients = vcat(initial_recipients, new_recipients)
+    # Recipients active at start_date: registry indices + their arrival dates
+    active_at_start_mask = is_active.(recipients, start_date)
+    waiting_registry_indices = findall(active_at_start_mask)
+    waiting_arrival_dates = KidneyAllocation.get_arrival.(recipients[waiting_registry_indices])
 
-    new_donors = generate_donor_arrivals(
-        donors;
-        origin=origin,
-        nyears=nyears,
-        arrival_rate=donor_rate,
-        rng=rng,
-    )
+    # New recipient arrivals: registry indices + simulated arrival dates
+    sampled_recipient_indices, sampled_recipient_arrival_dates =
+        generate_arrivals(eachindex(recipients), recipient_rate;
+                          origin=start_date, nyears=nyears, rng=rng)
 
-    return waiting_recipients, new_donors
+    append!(waiting_registry_indices, sampled_recipient_indices)
+    append!(waiting_arrival_dates, sampled_recipient_arrival_dates)
+
+    # New donor arrivals (used only internally for allocation)
+    sampled_donor_indices, sampled_donor_arrival_dates =
+        generate_arrivals(eachindex(donors), donor_rate;
+                          origin=start_date, nyears=nyears, rng=rng)
+
+    # Reconstruct temporary objects for allocation only
+    waiting_recipients =
+        reconstruct_recipients(recipients, waiting_registry_indices, waiting_arrival_dates)
+
+    arriving_donors =
+        reconstruct_donors(donors, sampled_donor_indices, sampled_donor_arrival_dates)
+
+    # Allocate donors (positions refer to waiting_recipients)
+    allocated_positions = allocate(waiting_recipients, arriving_donors, fm, u)
+
+    # Filter non-attributed organ (i.e. ind ==0)
+    filter!(>(0), allocated_positions)
+    sort!(allocated_positions)
+
+    # Remove transplanted recipients from the indexed representation
+    deleteat!(waiting_registry_indices, allocated_positions)
+    deleteat!(waiting_arrival_dates, allocated_positions)
+
+    # Keep `waiting_recipients` aligned for the next step
+    deleteat!(waiting_recipients, allocated_positions)
+
+    # Keep recipients active at end of simulation
+    active_at_end_mask = is_active.(waiting_recipients, simulation_end)
+
+    final_recipient_indices = waiting_registry_indices[active_at_end_mask]
+    final_arrival_dates = waiting_arrival_dates[active_at_end_mask]
+
+    # Shift arrivals so that simulation_end maps to origin_date
+    time_waited = simulation_end .- final_arrival_dates
+    shifted_arrival_dates = origin_date .- time_waited
+
+    return final_recipient_indices, shifted_arrival_dates
 end

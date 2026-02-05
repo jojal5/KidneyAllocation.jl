@@ -4,13 +4,13 @@
 # using Pkg
 # Pkg.activate(".")
 
-using Dates, CSV, DataFrames, Distributions, GLM, JLD2
+using Dates, CSV, DataFrames, Distributions, GLM, JLD2, Random
 
 using KidneyAllocation
 
 import KidneyAllocation: build_donor_registry, build_recipient_registry
 import KidneyAllocation: retrieve_decision_data, fit_decision_threshold
-
+import KidneyAllocation: generate_arrivals, reconstruct_donors, reconstruct_recipients, simulate_initial_state_indexed
 
 
 recipient_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Candidates.csv"
@@ -32,16 +32,28 @@ u = fit_decision_threshold(fm)
 
 using Base.Threads
 
-outdir = joinpath(@__DIR__, "src", "SyntheticData")
-mkpath(outdir)
+output_filename = "initial_waiting_lists_indexed.jld2"
+output_dir = joinpath(@__DIR__, "src", "SyntheticData")
+mkpath(output_dir)
+output_path = joinpath(output_dir, output_filename)
 
-Threads.@threads for i in 1:1000
+num_simulations = 1000
+base_seed = 1234 
 
-    recipient_list, donor_list =
-        KidneyAllocation.generate_pseudo_history(recipients, donors, fm, u)
+origin_date = Date(2000,1,1)
 
-    filename = string("sim_", lpad(i, 4, '0') ,".jld2")
-    filepath = joinpath(outdir, filename)
+# Each entry i holds the indexed waiting list produced by simulation i
+waiting_indices = Vector{Vector{UInt16}}(undef, num_simulations)
+waiting_day_offsets = Vector{Vector{Int16}}(undef, num_simulations)
 
-    jldsave(filepath; recipient_list, donor_list) 
+Threads.@threads for sim_id in 1:num_simulations
+    rng = MersenneTwister(base_seed + sim_id) # Ensure that all simulation are independent
+
+    idx, dates = simulate_initial_state_indexed(recipients, donors, fm, u; origin_date=origin_date, rng=rng)
+
+    waiting_indices[sim_id] = UInt16.(idx)
+    waiting_day_offsets[sim_id] = Int16.(Dates.value.(dates .- origin_date))
 end
+
+jldsave(output_path; waiting_indices, waiting_day_offsets, origin_date, compress=true)
+
