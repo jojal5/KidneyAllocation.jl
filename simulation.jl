@@ -66,34 +66,39 @@ new_donors = set_donor_arrival.(sampled_donors, tₒ)                           
 # KidneyAllocation.get_arrival.(new_donors)
 
 
-donor = new_donors[1]
+donor = new_donors[1000]
 arrival = donor.arrival
-eligible_index = is_active.(waiting_recipients, arrival) .&& is_abo_compatible.(donor, waiting_recipients)
-eligible_recipients = waiting_recipients[eligible_index]
-chosen_recipient_idx = allocate_one_donor(eligible_recipients, donor, fm, u)
-chosen_recipient = eligible_recipients[chosen_recipient_idx]
+# eligible_index = is_active.(waiting_recipients, arrival) .&& is_abo_compatible.(donor, waiting_recipients)
+# eligible_recipients = waiting_recipients[eligible_index]
+# chosen_recipient_idx = allocate_one_donor(donor, eligible_recipients, fm, u)
+# chosen_recipient = eligible_recipients[chosen_recipient_idx]
+# @time allocate_one_donor(eligible_recipients, donor, fm, u)
 
-@time allocate_one_donor(eligible_recipients, donor, fm, u)
+eligible_mask = is_active.(waiting_recipients, arrival) .&& is_abo_compatible.(donor, waiting_recipients)
+eligible_index = findall(eligible_mask)
+
+ranked_indices = KidneyAllocation.rank_eligible_indices_by_score(donor,waiting_recipients, eligible_index)
+
+@time chosen_index = allocate_one_donor(donor, waiting_recipients, ranked_indices, fm, u)
+
+chosen_recipient = waiting_recipients[chosen_index]
 
 # Sanity checks
 score.(donor, chosen_recipient)
 get_decision(donor, chosen_recipient, fm, u)
 
 
-@time ind = allocate(waiting_recipients, new_donors, fm, u)
+@time ind = allocate(new_donors, waiting_recipients, fm, u)
 
 # Sanity checks
 score(new_donors[100], waiting_recipients[ind[100]])
 get_decision(new_donors[100], waiting_recipients[ind[100]], fm, u)
 
-
 @time ind = allocate(waiting_recipients, new_donors, fm, u, until = 1)
 
 findlast(ind .!= 0)
 
-
 import KidneyAllocation: generate_arrivals, reconstruct_donors, reconstruct_recipients, simulate_initial_state_indexed
-
 
 @time ind, d = generate_arrivals(eachindex(recipients), 100)
 @time r = recipients[ind]
@@ -108,4 +113,46 @@ import KidneyAllocation: generate_arrivals, reconstruct_donors, reconstruct_reci
 @time ind, d = simulate_initial_state_indexed(recipients, donors, fm, u)
 reconstruct_recipients(recipients, ind, d)
 
+# 15863 - 0.093 years
+r = Recipient(Date(1945,03,11),Date(1980,11,2),Date(2000,1,1), O,
+    29, 29, 44, 44, 7, 7,
+    0)
+# r = shift_recipient_timeline(r, Date(2000,1,1))
 
+
+# 15472 - 0.063 years
+r = Recipient(Date(1931,09,17),Date(1999,10,14),Date(2000,1,1), O,
+    1, 2, 35, 61, 103, 13,
+    0)
+# r = shift_recipient_timeline(r, Date(2000,1,1))
+
+
+@load "src/SyntheticData/initial_waiting_lists_indexed.jld2"
+
+waiting_time = Vector{Float64}(undef, 1000)
+
+# for iSim in 1:1
+for iSim in 1:length(waiting_indices)
+    arrival_dates = origin_date .+ Day.(waiting_day_offsets[iSim])
+
+    waiting_recipients = reconstruct_recipients(recipients, waiting_indices[iSim], arrival_dates)
+
+    ind, d = generate_arrivals(eachindex(recipients), λᵣ)
+    append!(waiting_recipients, reconstruct_recipients(recipients, ind, d))
+
+    ind, d = generate_arrivals(eachindex(donors), λₒ)
+    new_donors = reconstruct_donors(donors, ind, d)
+
+    # Add the recipient of interest
+    pushfirst!(waiting_recipients, r)
+
+    ind = allocate(waiting_recipients, new_donors, fm, u; until=1)
+    ind[findlast(ind .!= 0)]
+
+    waiting_time[iSim] = fractionalyears_between(Date(2000,1,1), new_donors[findlast(ind .!= 0)].arrival)
+
+end
+
+# using Gadfly
+
+plot(y=waiting_time, Geom.boxplot)
