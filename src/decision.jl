@@ -133,20 +133,17 @@ end
 #     return accepting_index
 # end
 
-"""
-    allocate_one_donor(donor, recipients, ranked_indices, fm, u) -> Int
 
-Evaluate sequential offers for `donor` to `recipients[ranked_indices]` and
-return the first accepting recipient index (into `recipients`). Returns `0`
-if no recipient accepts.
-"""
 function allocate_one_donor(
     donor::Donor,
     recipients::Vector{Recipient},
-    ranked_indices::AbstractVector{<:Integer},
     fm,
     u,
+    is_unallocated::BitVector=trues(length(recipients))
 )
+
+    eligible_indices = get_eligible_recipient_indices(donor, recipients, is_unallocated)
+    ranked_indices = rank_eligible_indices_by_score(donor, recipients, eligible_indices)
 
     for i in eachindex(ranked_indices)
         r_idx = ranked_indices[i]
@@ -157,6 +154,43 @@ function allocate_one_donor(
 
     return 0
 end
+
+
+"""
+    get_eligible_recipient_indices(donor, recipients, is_unallocated) 
+
+Return the indices of recipients eligible to receive an offer from `donor`.
+
+A recipient is considered eligible if it:
+- is currently unallocated,
+- is active at the donor arrival date, and
+- is ABO-compatible with the donor.
+
+# Arguments
+- `donor::Donor`: Donor being allocated.
+- `recipients::Vector{Recipient}`: Current waiting list.
+- `is_unallocated::BitVector`: Optional mask indicating which recipients are
+  still available for allocation (default: all `true`).
+
+# Returns
+- `Vector{Int}`: Indices into `recipients` identifying eligible recipients.
+"""
+function get_eligible_recipient_indices(
+    donor::Donor,
+    recipients::Vector{Recipient},
+    is_unallocated::BitVector = trues(length(recipients)),
+)
+
+    arrival = donor.arrival
+
+    eligible_mask = copy(is_unallocated)
+    eligible_mask .&= is_active.(recipients, arrival)
+    eligible_mask .&= is_abo_compatible.(donor, recipients)
+
+    return findall(eligible_mask)
+end
+
+
 
 
 """
@@ -231,46 +265,74 @@ end
 #     return allocated_recipient_index
 # end
 
+# # C'est important pour cette fonction qu'on envoie les patients en attente, pas tous les patients de la banque.
+# function allocate(donors::Vector{Donor}, recipients::Vector{Recipient}, fm, u; until::Int64=-9999)
 
+#     is_unallocated = trues(length(recipients))                 
+#     allocated_recipient_index = zeros(Int64,length(donors))
+
+#     eligible_mask = falses(length(recipients))
+#     eligible_indices = Int64[]
+
+#     for donor_idx in eachindex(donors)
+
+#         donor = donors[donor_idx]
+#         arrival = donor.arrival
+
+#         # Build eligibility mask with minimal temporaries
+#         eligible_mask .= is_unallocated                         # start from availability
+#         eligible_mask .&= is_active.(recipients, arrival)        # active at arrival
+#         eligible_mask .&= is_abo_compatible.(donor, recipients)  # ABO compatible
+
+#         # Reuse eligible_indices instead of allocating a new vector each time
+#         empty!(eligible_indices)
+#         append!(eligible_indices, findall(eligible_mask))
+
+#         if isempty(eligible_indices)
+#             allocated_recipient_index[donor_idx] = 0
+#             continue
+#         end
+
+#         ranked_indices = rank_eligible_indices_by_score(donor, recipients, eligible_indices)
+
+#         accepted_index = allocate_one_donor(donor, recipients, ranked_indices, fm, u)
+
+#         if accepted_index != 0
+#             is_unallocated[ranked_indices[accepted_index]] = false
+#             allocated_recipient_index[donor_idx] = ranked_indices[accepted_index]
+#             if ranked_indices[accepted_index] == until
+#                 break
+#             end
+#         else
+#             allocated_recipient_index[donor_idx] = 0
+#         end
+
+#     end
+
+#     return allocated_recipient_index
+# end
+
+
+
+# C'est important pour cette fonction qu'on envoie les patients en attente, pas tous les patients de la banque.
 function allocate(donors::Vector{Donor}, recipients::Vector{Recipient}, fm, u; until::Int64=-9999)
 
     is_unallocated = trues(length(recipients))                 
     allocated_recipient_index = zeros(Int64,length(donors))
 
-    eligible_mask = falses(length(recipients))
-    eligible_indices = Int64[]
-
     for donor_idx in eachindex(donors)
 
         donor = donors[donor_idx]
-        arrival = donor.arrival
 
-        # Build eligibility mask with minimal temporaries
-        eligible_mask .= is_unallocated                         # start from availability
-        eligible_mask .&= is_active.(recipients, arrival)        # active at arrival
-        eligible_mask .&= is_abo_compatible.(donor, recipients)  # ABO compatible
+        allocated_recipient_index[donor_idx] = allocate_one_donor(donor, recipients, fm, u, is_unallocated)
 
-        # Reuse eligible_indices instead of allocating a new vector each time
-        empty!(eligible_indices)
-        append!(eligible_indices, findall(eligible_mask))
 
-        if isempty(eligible_indices)
-            allocated_recipient_index[donor_idx] = 0
-            continue
+        if allocated_recipient_index[donor_idx] != 0
+            is_unallocated[allocated_recipient_index[donor_idx]] = false
         end
 
-        ranked_indices = rank_eligible_indices_by_score(donor, recipients, eligible_indices)
-
-        accepted_index = allocate_one_donor(donor, recipients, ranked_indices, fm, u)
-
-        if accepted_index != 0
-            is_unallocated[ranked_indices[accepted_index]] = false
-            allocated_recipient_index[donor_idx] = ranked_indices[accepted_index]
-            if ranked_indices[accepted_index] == until
-                break
-            end
-        else
-            allocated_recipient_index[donor_idx] = 0
+        if allocated_recipient_index[donor_idx] == until
+            break
         end
 
     end

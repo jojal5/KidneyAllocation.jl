@@ -77,9 +77,9 @@ arrival = donor.arrival
 eligible_mask = is_active.(waiting_recipients, arrival) .&& is_abo_compatible.(donor, waiting_recipients)
 eligible_index = findall(eligible_mask)
 
-ranked_indices = KidneyAllocation.rank_eligible_indices_by_score(donor,waiting_recipients, eligible_index)
+ranked_indices = KidneyAllocation.rank_eligible_indices_by_score(donor,waiting_recipients, eligible_index )
 
-@time chosen_index = allocate_one_donor(donor, waiting_recipients, ranked_indices, fm, u)
+@time chosen_index = allocate_one_donor(donor, waiting_recipients, fm, u)
 
 chosen_recipient = waiting_recipients[chosen_index]
 
@@ -94,7 +94,7 @@ get_decision(donor, chosen_recipient, fm, u)
 score(new_donors[100], waiting_recipients[ind[100]])
 get_decision(new_donors[100], waiting_recipients[ind[100]], fm, u)
 
-@time ind = allocate(waiting_recipients, new_donors, fm, u, until = 1)
+@time ind = allocate(new_donors, waiting_recipients, fm, u, until = 1)
 
 findlast(ind .!= 0)
 
