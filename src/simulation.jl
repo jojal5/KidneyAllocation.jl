@@ -176,8 +176,8 @@ period.
 function simulate_initial_state_indexed(
     recipients::Vector{Recipient},
     donors::Vector{Donor},
-    fm,
-    u;
+    dm::AbstractDecisionModel,
+    threshold::Real,
     start_date::Date = Date(2014, 1, 1),
     nyears::Int = 10,
     donor_rate::Real = 242.0,
@@ -214,7 +214,7 @@ function simulate_initial_state_indexed(
         reconstruct_donors(donors, sampled_donor_indices, sampled_donor_arrival_dates)
 
     # Allocate donors (positions refer to waiting_recipients)
-    allocated_positions = allocate(waiting_recipients, arriving_donors, fm, u)
+    allocated_positions = allocate(waiting_recipients, arriving_donors, dm, threshold)
 
     # Filter non-attributed organ (i.e. ind ==0)
     filter!(>(0), allocated_positions)

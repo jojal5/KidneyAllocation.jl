@@ -41,7 +41,9 @@ model = @formula(DECISION ~ log(KDRI) + CAN_AGE * KDRI * CAN_WAIT + CAN_AGE^2 * 
 
 fm = glm(model, data, Bernoulli(), LogitLink())
 
-u = fit_decision_threshold(fm)
+dm = GLMDecisionModel(fm)
+
+threshold = fit_decision_threshold(dm)
 # ------------------------------------------------------------------------------------
 
 # Retrieve the waiting recipients at January 1st, 2014
@@ -79,22 +81,24 @@ eligible_index = findall(eligible_mask)
 
 ranked_indices = KidneyAllocation.rank_eligible_indices_by_score(donor,waiting_recipients, eligible_index )
 
-@time chosen_index = allocate_one_donor(donor, waiting_recipients, fm, u)
+@time chosen_index = allocate_one_donor(donor, waiting_recipients, dm, threshold)
 
 chosen_recipient = waiting_recipients[chosen_index]
 
 # Sanity checks
 score.(donor, chosen_recipient)
-get_decision(donor, chosen_recipient, fm, u)
+KidneyAllocation.acceptance_probability(dm, chosen_recipient, donor)
+KidneyAllocation.decide(dm, threshold,chosen_recipient, donor)
 
 
-@time ind = allocate(new_donors, waiting_recipients, fm, u)
+@time ind = allocate(new_donors, waiting_recipients, dm, threshold)
 
 # Sanity checks
 score(new_donors[100], waiting_recipients[ind[100]])
-get_decision(new_donors[100], waiting_recipients[ind[100]], fm, u)
+KidneyAllocation.acceptance_probability(dm, waiting_recipients[ind[100]], new_donors[100])
+KidneyAllocation.decide(dm, threshold, waiting_recipients[ind[100]], new_donors[100])
 
-@time ind = allocate(new_donors, waiting_recipients, fm, u, until = 1)
+@time ind = allocate(new_donors, waiting_recipients, dm, threshold, until = 1)
 
 findlast(ind .!= 0)
 
