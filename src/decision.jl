@@ -9,8 +9,15 @@ function retrieve_decision_data(donors_filepath::String, recipients_filepath::St
 
     # columns needed for KDRI computation
     VAR_KDRI = [:DON_AGE, :HEIGHT, :WEIGHT, :HYPERTENSION, :DIABETES, :DEATH, :CREATININE, :DCD]
-
     dropmissing!(df_donors, VAR_KDRI)
+
+    # columns needed for mismatch counting (donors)
+    VAR_MISMATCH_DON = [:DON_A1, :DON_A2, :DON_B1, :DON_B2, :DON_DR1, :DON_DR2]
+    dropmissing!(df_donors, VAR_MISMATCH_DON)
+
+    # columns needed for mismatch counting (recipients)
+    VAR_MISMATCH_REC = [:CAN_A1, :CAN_A2, :CAN_B1, :CAN_B2, :CAN_DR1, :CAN_DR2]
+    dropmissing!(df_recipients, VAR_MISMATCH_REC)
 
     kdri = Float64[]
 
@@ -40,6 +47,7 @@ function retrieve_decision_data(donors_filepath::String, recipients_filepath::St
     age = Int64[]
     waittime = Union{Float64,Missing}[]
     blood = String[]
+    n_mismatch = Int64[]
 
     for r in eachrow(data)
 
@@ -54,19 +62,26 @@ function retrieve_decision_data(donors_filepath::String, recipients_filepath::St
         end
         blood_r = df_recipients.CAN_BLOOD[ind]
 
+        n = 0;
+        n += KidneyAllocation.mismatch_locus(HLA.((r.DON_A1, r.DON_A2)), HLA.((df_recipients.CAN_A1[ind], df_recipients.CAN_A2[ind])))
+        n += KidneyAllocation.mismatch_locus(HLA.((r.DON_B1, r.DON_B2)), HLA.((df_recipients.CAN_B1[ind], df_recipients.CAN_B2[ind])))
+        n += KidneyAllocation.mismatch_locus(HLA.((r.DON_DR1, r.DON_DR2)), HLA.((df_recipients.CAN_DR1[ind], df_recipients.CAN_DR2[ind])))
+
         push!(age, age_r)
         push!(waittime, waittime_r)
         push!(blood, blood_r)
+        push!(n_mismatch, n)
 
     end
 
     data.CAN_AGE = age
     data.CAN_WAIT = waittime
     data.CAN_BLOOD = blood
+    data.MISMATCH = n_mismatch
 
     data.DECISION = data.DECISION .== "Acceptation"
 
-    select!(data, [:DON_AGE, :KDRI, :CAN_AGE, :CAN_WAIT, :CAN_BLOOD, :DECISION])
+    select!(data, [:DON_AGE, :KDRI, :CAN_AGE, :CAN_WAIT, :CAN_BLOOD, :MISMATCH, :DECISION])
 
     return data
 
