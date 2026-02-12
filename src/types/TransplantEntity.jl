@@ -384,6 +384,58 @@ function is_abo_compatible(donor::Donor, recipient::Recipient)
 end
 
 
+"""
+    get_HLA_A(t::TransplantEntity) -> Tuple
+
+Return the pair of HLA-A alleles of `t`.
+"""
+function get_HLA_A(t::TransplantEntity)
+    return (t.a1, t.a2)
+end
+
+"""
+    get_HLA_B(t::TransplantEntity) -> Tuple
+
+Return the pair of HLA-B alleles of `t`.
+"""
+function get_HLA_B(t::TransplantEntity)
+    return (t.b1, t.b2)
+end
+
+"""
+    get_HLA_DR(t::TransplantEntity) -> Tuple
+
+Return the pair of HLA-DR alleles of `t`.
+"""
+function get_HLA_DR(t::TransplantEntity)
+    return (t.dr1, t.dr2)
+end
+
+"""
+    mismatch_locus(l₁, l₂) -> Int
+
+Return the number of allele mismatches between two HLA loci.
+
+Counts how many alleles in `l₂` are not present in `l₁`.
+"""
+function mismatch_locus(l₁::Tuple{HLA, HLA}, l₂::Tuple{HLA, HLA})::Int
+    return count(x -> !(x in l₁), l₂)
+end
+
+"""
+    mismatch_count(t₁, t₂) -> Int
+
+Return the total number of HLA mismatches between two transplant entities across loci A, B, and DR.
+"""
+function mismatch_count(t₁::TransplantEntity, t₂::TransplantEntity)::Int
+    mm_A  = mismatch_locus(get_HLA_A(t₁),  get_HLA_A(t₂))
+    mm_B  = mismatch_locus(get_HLA_B(t₁),  get_HLA_B(t₂))
+    mm_DR = mismatch_locus(get_HLA_DR(t₁), get_HLA_DR(t₂))
+
+    return mm_A + mm_B + mm_DR
+end
+
+
 
 function Base.show(io::IO, ::MIME"text/plain", donors::AbstractVector{<:Donor})
     n = length(donors)

@@ -6,6 +6,7 @@ module KidneyAllocation
 
     include("types/ABOGroup.jl")
     include("types/TransplantEntity.jl")
+    include("types/DecisionModel.jl")
     include("AllocationScore/allocationscore.jl")
     include("Quality/quality.jl")
     include("decision.jl")
