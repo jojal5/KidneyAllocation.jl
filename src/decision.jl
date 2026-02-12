@@ -111,3 +111,117 @@ function get_decision(donor::Donor, recipient::Recipient, fm::StatsModels.TableR
     end
 
 end
+
+
+
+function allocate_one_donor(
+    donor::Donor,
+    recipients::Vector{Recipient},
+    fm,
+    u,
+    is_unallocated::BitVector=trues(length(recipients))
+)
+
+    eligible_indices = get_eligible_recipient_indices(donor, recipients, is_unallocated)
+    ranked_indices = rank_eligible_indices_by_score(donor, recipients, eligible_indices)
+
+    for i in eachindex(ranked_indices)
+        r_idx = ranked_indices[i]
+        # TODO: Filter for CPRA
+        if get_decision(donor, recipients[r_idx], fm, u)
+            return Int(r_idx)
+        end
+    end
+
+    return 0
+end
+
+
+"""
+    get_eligible_recipient_indices(donor, recipients, is_unallocated) 
+
+Return the indices of recipients eligible to receive an offer from `donor`.
+
+A recipient is considered eligible if it:
+- is currently unallocated,
+- is active at the donor arrival date, and
+- is ABO-compatible with the donor.
+
+# Arguments
+- `donor::Donor`: Donor being allocated.
+- `recipients::Vector{Recipient}`: Current waiting list.
+- `is_unallocated::BitVector`: Optional mask indicating which recipients are
+  still available for allocation (default: all `true`).
+
+# Returns
+- `Vector{Int}`: Indices into `recipients` identifying eligible recipients.
+"""
+function get_eligible_recipient_indices(
+    donor::Donor,
+    recipients::Vector{Recipient},
+    is_unallocated::BitVector = trues(length(recipients)),
+)
+
+    arrival = donor.arrival
+
+    eligible_mask = copy(is_unallocated)
+    eligible_mask .&= is_active.(recipients, arrival)
+    eligible_mask .&= is_abo_compatible.(donor, recipients)
+
+    return findall(eligible_mask)
+end
+
+
+
+
+"""
+    rank_eligible_indices_by_score(donor, recipients, eligible_indices)
+
+Return a new vector of recipient indices ranked by decreasing attribution score
+for `donor`.
+
+The returned vector contains the same elements as `eligible_indices`, reordered
+so that `score(donor, recipients[i])` is decreasing.
+
+# Arguments
+- `donor::Donor`: Donor being allocated.
+- `recipients::Vector{Recipient}`: Current waiting list.
+- `eligible_indices::AbstractVector{<:Integer}`: Indices into `recipients`
+  identifying eligible recipients.
+"""
+function rank_eligible_indices_by_score(
+    donor::Donor,
+    recipients::Vector{Recipient},
+    eligible_indices::AbstractVector{<:Integer},
+)
+    scores = score.(Ref(donor), recipients[eligible_indices])
+    p = sortperm(scores; rev=true)
+    return eligible_indices[p]
+end
+
+
+
+# C'est important pour cette fonction qu'on envoie les patients en attente, pas tous les patients de la banque.
+function allocate(donors::Vector{Donor}, recipients::Vector{Recipient}, fm, u; until::Int64=-9999)
+
+    is_unallocated = trues(length(recipients))                 
+    allocated_recipient_index = zeros(Int64,length(donors))
+
+    for donor_idx in eachindex(donors)
+
+        donor = donors[donor_idx]
+
+        allocated_recipient_index[donor_idx] = allocate_one_donor(donor, recipients, fm, u, is_unallocated)
+
+        if allocated_recipient_index[donor_idx] != 0
+            is_unallocated[allocated_recipient_index[donor_idx]] = false
+        end
+
+        if allocated_recipient_index[donor_idx] == until
+            break
+        end
+
+    end
+
+    return allocated_recipient_index
+end

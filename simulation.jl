@@ -1,7 +1,7 @@
 using Pkg
 Pkg.activate(".")
 
-using Dates, CSV, DataFrames, Distributions, GLM, JLD2
+using Dates, CSV, DataFrames, Distributions, GLM, JLD2, Random
 
 using KidneyAllocation
 
@@ -66,272 +66,93 @@ new_donors = set_donor_arrival.(sampled_donors, tₒ)                           
 # KidneyAllocation.get_arrival.(new_donors)
 
 
-donor = new_donors[1]
+donor = new_donors[1000]
 arrival = donor.arrival
-eligible_index = is_active.(waiting_recipients, arrival) .&& is_abo_compatible.(donor, waiting_recipients)
-eligible_recipients = waiting_recipients[eligible_index]
-chosen_recipient_idx = allocate_one_donor(eligible_recipients, donor, fm, u)
-chosen_recipient = eligible_recipients[chosen_recipient_idx]
+# eligible_index = is_active.(waiting_recipients, arrival) .&& is_abo_compatible.(donor, waiting_recipients)
+# eligible_recipients = waiting_recipients[eligible_index]
+# chosen_recipient_idx = allocate_one_donor(donor, eligible_recipients, fm, u)
+# chosen_recipient = eligible_recipients[chosen_recipient_idx]
+# @time allocate_one_donor(eligible_recipients, donor, fm, u)
 
-@time allocate_one_donor(eligible_recipients, donor, fm, u)
+eligible_mask = is_active.(waiting_recipients, arrival) .&& is_abo_compatible.(donor, waiting_recipients)
+eligible_index = findall(eligible_mask)
+
+ranked_indices = KidneyAllocation.rank_eligible_indices_by_score(donor,waiting_recipients, eligible_index )
+
+@time chosen_index = allocate_one_donor(donor, waiting_recipients, fm, u)
+
+chosen_recipient = waiting_recipients[chosen_index]
 
 # Sanity checks
 score.(donor, chosen_recipient)
 get_decision(donor, chosen_recipient, fm, u)
 
 
-@time ind = allocate(waiting_recipients, new_donors, fm, u)
+@time ind = allocate(new_donors, waiting_recipients, fm, u)
 
 # Sanity checks
 score(new_donors[100], waiting_recipients[ind[100]])
 get_decision(new_donors[100], waiting_recipients[ind[100]], fm, u)
 
-
-@time ind = allocate(waiting_recipients, new_donors, fm, u, until = 1)
+@time ind = allocate(new_donors, waiting_recipients, fm, u, until = 1)
 
 findlast(ind .!= 0)
 
+import KidneyAllocation: generate_arrivals, reconstruct_donors, reconstruct_recipients, simulate_initial_state_indexed
 
-@time r = KidneyAllocation.simulate_initial_recipient_list(recipients, donors, fm, u)
+@time ind, d = generate_arrivals(eachindex(recipients), 100)
+@time r = recipients[ind]
+@time shift_recipient_timeline.(r, d)
+@time reconstruct_recipients(recipients, ind, d)
 
-"""
-    generate_pseudo_history(
-        recipients::Vector{Recipient},
-        donors::Vector{Donor},
-        fm,
-        u;
-        origin::Date = Date(2000,1,1),
-        nyears::Int = 10,
-        donor_rate::Real = 242.0,
-        recipient_rate::Real = 272.83
-    ) -> (Vector{Recipient}, Vector{Donor})
+@time ind, d = generate_arrivals(eachindex(donors), 100)
+@time r = donors[ind]
+@time set_donor_arrival.(r, d)
+@time reconstruct_donors(donors, ind, d)
 
-Generate a synthetic ("pseudo") transplant history over a given time horizon.
+@time ind, d = simulate_initial_state_indexed(recipients, donors, fm, u)
+reconstruct_recipients(recipients, ind, d)
 
-This function constructs a simulated waiting list and donor stream by:
+# 15863 - 0.093 years
+r = Recipient(Date(1945,03,11),Date(1980,11,2),Date(2000,1,1), O,
+    29, 29, 44, 44, 7, 7,
+    0)
+# r = shift_recipient_timeline(r, Date(2000,1,1))
 
-1. Generating an initial recipient population using
-   [`simulate_initial_recipient_list`](@ref).
-2. Simulating new recipient arrivals over the period
-   [`origin`, `origin + Year(nyears)`] using a Poisson process with rate
-   `recipient_rate`.
-3. Simulating new donor arrivals over the same period using a Poisson process
-   with rate `donor_rate`.
-4. Resampling recipient and donor profiles and shifting their timelines to
-   match simulated arrival dates.
 
-The resulting output represents a synthetic historical dataset that can be
-used as input for downstream allocation simulations.
+# 15472 - 0.063 years
+r = Recipient(Date(1931,09,17),Date(1999,10,14),Date(2000,1,1), O,
+    1, 2, 35, 61, 103, 13,
+    0)
+# r = shift_recipient_timeline(r, Date(2000,1,1))
 
-# Arguments
-- `recipients::Vector{Recipient}`: Reference pool of recipient profiles.
-- `donors::Vector{Donor}`: Reference pool of donor profiles.
-- `fm`: Fitted statistical model used in allocation decisions.
-- `u`: Decision parameter (e.g., acceptance threshold).
-- `origin::Date`: Starting date of the simulated history.
-- `nyears::Int`: Length of the simulated period in years.
-- `donor_rate::Real`: Mean annual arrival rate of donors.
-- `recipient_rate::Real`: Mean annual arrival rate of recipients.
 
-# Returns
-- `(Vector{Recipient}, Vector{Donor})`:
-    - `waiting_recipients`: Synthetic waiting list at the end of the
-      initialization phase.
-    - `new_donors`: Synthetic donor arrivals over the simulation period.
+@load "src/SyntheticData/initial_waiting_lists_indexed.jld2"
 
-# Modeling Assumptions
-- Recipient and donor arrivals follow independent Poisson processes.
-- New individuals are generated by resampling existing profiles and shifting
-  their timelines.
-- Initial recipients reflect the output of
-  `simulate_initial_recipient_list`.
+waiting_time = Vector{Float64}(undef, 1000)
 
-# Performance Notes
-- This function allocates new vectors when concatenating recipient lists and
-  generating arrivals.
-- For large-scale Monte Carlo studies, repeated calls may benefit from
-  buffer reuse and in-place variants.
+# for iSim in 1:1
+for iSim in 1:length(waiting_indices)
+    arrival_dates = origin_date .+ Day.(waiting_day_offsets[iSim])
 
-# Reproducibility
-- Results depend on the global random number generator state.
-  For reproducible simulations, set a seed before calling this function:
+    waiting_recipients = reconstruct_recipients(recipients, waiting_indices[iSim], arrival_dates)
 
-      Random.seed!(1234)
+    ind, d = generate_arrivals(eachindex(recipients), λᵣ)
+    append!(waiting_recipients, reconstruct_recipients(recipients, ind, d))
 
-# See also
-- [`simulate_initial_recipient_list`](@ref)
-- [`allocate`](@ref)
-- [`allocate_one_donor`](@ref)
-- [`get_decision`](@ref)
-"""
-function generate_pseudo_history(
-    recipients::Vector{Recipient},
-    donors::Vector{Donor},
-    fm,
-    u;
-    origin::Date = Date(2000, 1, 1),
-    nyears::Int = 10,
-    donor_rate::Real = 242.0,
-    recipient_rate::Real = 272.83,
-)
-    initial_recipients = KidneyAllocation.simulate_initial_recipient_list(recipients, donors, fm, u)
+    ind, d = generate_arrivals(eachindex(donors), λₒ)
+    new_donors = reconstruct_donors(donors, ind, d)
 
-    sim_end = origin + Year(nyears)
+    # Add the recipient of interest
+    pushfirst!(waiting_recipients, r)
 
-    # Generate new recipients over the simulation period
-    n_rec = rand(Poisson(recipient_rate * nyears))
-    rec_arrivals = KidneyAllocation.sample_days(origin, sim_end, n_rec)
-    sampled_recipients = rand(recipients, n_rec)
-    new_recipients = KidneyAllocation.shift_recipient_timeline.(sampled_recipients, rec_arrivals)
-    waiting_recipients = vcat(initial_recipients, new_recipients)
+    ind = allocate(waiting_recipients, new_donors, fm, u; until=1)
+    ind[findlast(ind .!= 0)]
 
-    # Generate new donors over the simulation period
-    n_don = rand(Poisson(donor_rate * nyears))
-    don_arrivals = KidneyAllocation.sample_days(origin, sim_end, n_don)
-    sampled_donors = rand(donors, n_don)
-    new_donors = set_donor_arrival.(sampled_donors, don_arrivals)
-
-    return waiting_recipients, new_donors
+    waiting_time[iSim] = fractionalyears_between(Date(2000,1,1), new_donors[findlast(ind .!= 0)].arrival)
 
 end
 
-r,d = generate_pseudo_history(recipients, donors, fm, u)
+# using Gadfly
 
-
-"""
-    generate_recipient_arrivals(
-        recipients::Vector{Recipient};
-        origin::Date = Date(2000,1,1),
-        nyears::Int = 10,
-        arrival_rate::Real = 272.83
-    ) -> Vector{Recipient}
-
-Generate a synthetic sequence of recipient arrivals over a given time horizon.
-
-This function simulates new recipient arrivals between `origin` and
-`origin + Year(nyears)` by:
-
-1. Drawing the total number of arrivals from a Poisson distribution with
-   mean `arrival_rate * nyears`.
-2. Sampling recipient profiles from the reference population `recipients`.
-3. Assigning each sampled recipient a random arrival date within the
-   simulation period.
-4. Shifting recipient timelines to match the simulated arrival dates.
-
-The output can be used to augment an existing waiting list in allocation
-simulations.
-
-# Arguments
-- `recipients::Vector{Recipient}`: Reference pool of recipient profiles used
-  for resampling.
-- `origin::Date`: Starting date of the simulation period.
-- `nyears::Int`: Length of the simulation horizon in years.
-- `arrival_rate::Real`: Mean annual arrival rate of recipients.
-
-# Returns
-- `Vector{Recipient}`: Vector of newly generated recipients with updated
-  arrival times.
-
-# Modeling Assumptions
-- Recipient arrivals follow a Poisson process.
-- Arrival times are uniformly distributed over the simulation period.
-- New recipients are generated by resampling existing profiles and shifting
-  their timelines.
-
-# Performance Notes
-- Broadcasting in `shift_recipient_timeline.(...)` allocates temporary arrays.
-- For large-scale simulations, consider buffer-reusing variants.
-
-# See also
-- [`simulate_initial_recipient_list`](@ref)
-- [`generate_pseudo_history`](@ref)
-- [`allocate`](@ref)
-"""
-function generate_recipient_arrivals(recipients::Vector{Recipient}; origin::Date=Date(2000,1,1), nyears::Int=10, arrival_rate::Real=272.83)
-
-    sim_end = origin + Year(nyears)
-
-    n_arrivals = rand(Poisson(arrival_rate * nyears))
-    arrival_dates = KidneyAllocation.sample_days(origin, sim_end, n_arrivals)
-    sampled_recipients = rand(recipients, n_arrivals)
-    new_recipients = KidneyAllocation.shift_recipient_timeline.(sampled_recipients, arrival_dates)
-    
-    return new_recipients
-
-end
-
-generate_recipient_arrivals(recipients)
-
-
-"""
-    generate_donor_arrivals(
-        donors::Vector{Donor};
-        origin::Date = Date(2000,1,1),
-        nyears::Int = 10,
-        arrival_rate::Real = 242.0
-    ) -> Vector{Donor}
-
-Generate a synthetic sequence of donor arrivals over a given time horizon.
-
-This function simulates new donor arrivals between `origin` and
-`origin + Year(nyears)` by:
-
-1. Drawing the total number of arrivals from a Poisson distribution with
-   mean `arrival_rate * nyears`.
-2. Sampling donor profiles from the reference population `donors`.
-3. Assigning each sampled donor a random arrival date within the simulation
-   period.
-4. Updating donor timelines to match the simulated arrival dates.
-
-The output can be used as input for kidney allocation simulations.
-
-# Arguments
-- `donors::Vector{Donor}`: Reference pool of donor profiles used for resampling.
-- `origin::Date`: Starting date of the simulation period.
-- `nyears::Int`: Length of the simulation horizon in years.
-- `arrival_rate::Real`: Mean annual arrival rate of donors.
-
-# Returns
-- `Vector{Donor}`: Vector of newly generated donors with updated arrival times.
-
-# Modeling Assumptions
-- Donor arrivals follow a Poisson process.
-- Arrival times are uniformly distributed over the simulation period.
-- New donors are generated by resampling existing profiles and shifting their
-  timelines.
-
-# Performance Notes
-- Broadcasting in `set_donor_arrival.(...)` allocates temporary arrays.
-- For large-scale simulations, consider buffer-reusing or in-place variants.
-
-# See also
-- [`generate_recipient_arrivals`](@ref)
-- [`generate_pseudo_history`](@ref)
-- [`simulate_initial_recipient_list`](@ref)
-- [`allocate`](@ref)
-"""
-function generate_donor_arrivals(donors::Vector{Donor}; origin::Date=Date(2000,1,1), nyears::Int=10, arrival_rate::Real=242.0)
-
-    sim_end = origin + Year(nyears)
-
-    n_arrivals = rand(Poisson(arrival_rate * nyears))
-    arrival_dates = KidneyAllocation.sample_days(origin, sim_end, n_arrivals)
-    sampled_donors = rand(donors, n_arrivals)
-    new_donors = set_donor_arrival.(sampled_donors, arrival_dates)
-    
-    return new_donors
-
-end
-
-generate_donor_arrivals(donors)
-
-
-using JLD2
-
-
-
-
-
-@save "pseudo_history_0001.jld2" r
-
-@time @load "pseudo_history_0001.jld2"
+plot(y=waiting_time, Geom.boxplot)
