@@ -88,44 +88,29 @@ function retrieve_decision_data(donors_filepath::String, recipients_filepath::St
 end
 
 
-function fit_decision_threshold(fm::StatsModels.TableRegressionModel)
 
-    gt = Int64.(response(fm))
+# function get_decision(donor::Donor, recipient::Recipient, fm::StatsModels.TableRegressionModel, u::Real)
 
-    θ̂ = predict(fm)
+#     if is_abo_compatible(get_bloodtype(donor), get_bloodtype(recipient))
 
-    fobj(u::Real) = -f1score(roc(gt, θ̂, u))
+#         arrival = get_arrival(donor)
+#         DON_AGE = donor.age
+#         KDRI = donor.kdri
 
-    res = optimize(fobj, 0.01, 0.75)
+#         CAN_AGE = years_between(recipient.birth, arrival)
+#         CAN_WAIT = fractionalyears_between(recipient.dialysis, arrival)
+#         CAN_BLOOD = string(get_bloodtype(recipient))
 
-    u = res.minimizer
+#         df = DataFrame(DON_AGE=DON_AGE, KDRI=KDRI, CAN_AGE=CAN_AGE, CAN_WAIT=CAN_WAIT, CAN_BLOOD=CAN_BLOOD)
 
-    return u
+#         θ̂ = predict(fm, df)[]
 
-end
+#         decision = θ̂ > u 
+#     else
+#         decision = false
+#     end
 
-function get_decision(donor::Donor, recipient::Recipient, fm::StatsModels.TableRegressionModel, u::Real)
-
-    if is_abo_compatible(get_bloodtype(donor), get_bloodtype(recipient))
-
-        arrival = get_arrival(donor)
-        DON_AGE = donor.age
-        KDRI = donor.kdri
-
-        CAN_AGE = years_between(recipient.birth, arrival)
-        CAN_WAIT = fractionalyears_between(recipient.dialysis, arrival)
-        CAN_BLOOD = string(get_bloodtype(recipient))
-
-        df = DataFrame(DON_AGE=DON_AGE, KDRI=KDRI, CAN_AGE=CAN_AGE, CAN_WAIT=CAN_WAIT, CAN_BLOOD=CAN_BLOOD)
-
-        θ̂ = predict(fm, df)[]
-
-        decision = θ̂ > u 
-    else
-        decision = false
-    end
-
-end
+# end
 
 
 

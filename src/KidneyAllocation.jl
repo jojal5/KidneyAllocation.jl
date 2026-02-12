@@ -18,6 +18,7 @@ module KidneyAllocation
 
     ABOGroup, O, A, B, AB,
     HLA,
-    TransplantEntity, Donor, Recipient
+    TransplantEntity, Donor, Recipient,
+    AbstractDecisionModel, GLMDecisionModel
 
 end
