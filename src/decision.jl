@@ -119,22 +119,24 @@ function allocate_one_donor(
     donor::Donor,
     recipients::Vector{Recipient},
     dm::AbstractDecisionModel,
-    threshold::Real,
     is_unallocated::BitVector=trues(length(recipients))
 )
 
     eligible_indices = get_eligible_recipient_indices(donor, recipients, is_unallocated)
     ranked_indices = rank_eligible_indices_by_score(donor, recipients, eligible_indices)
 
-    for i in eachindex(ranked_indices)
-        r_idx = ranked_indices[i]
-        # TODO: Filter for CPRA
-        if decide(dm, threshold, recipients[r_idx], donor)
-            return Int(r_idx)
-        end
+    p = acceptance_probability(dm, recipients[ranked_indices], donor)
+
+    acceptation = p .> dm.threshold
+
+    if any(acceptation)
+        ind = findfirst(acceptation)
+    else
+        ind = 0
     end
 
-    return 0
+    return ind
+
 end
 
 
@@ -203,7 +205,7 @@ end
 
 
 # C'est important pour cette fonction qu'on envoie les patients en attente, pas tous les patients de la banque.
-function allocate(donors::Vector{Donor}, recipients::Vector{Recipient}, dm::AbstractDecisionModel, threshold::Real; until::Int64=-9999)
+function allocate(donors::Vector{Donor}, recipients::Vector{Recipient}, dm::AbstractDecisionModel; until::Int64=-9999)
 
     is_unallocated = trues(length(recipients))                 
     allocated_recipient_index = zeros(Int64,length(donors))
@@ -212,7 +214,7 @@ function allocate(donors::Vector{Donor}, recipients::Vector{Recipient}, dm::Abst
 
         donor = donors[donor_idx]
 
-        allocated_recipient_index[donor_idx] = allocate_one_donor(donor, recipients, dm, threshold, is_unallocated)
+        allocated_recipient_index[donor_idx] = allocate_one_donor(donor, recipients, dm, is_unallocated)
 
         if allocated_recipient_index[donor_idx] != 0
             is_unallocated[allocated_recipient_index[donor_idx]] = false

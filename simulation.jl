@@ -8,7 +8,7 @@ using KidneyAllocation
 import KidneyAllocation: build_recipient_registry, load_recipient, is_active, is_expired, is_abo_compatible
 import KidneyAllocation: load_donor, build_donor_registry
 import KidneyAllocation: shift_recipient_timeline, set_donor_arrival
-import KidneyAllocation: retrieve_decision_data, fit_decision_threshold, get_decision
+import KidneyAllocation: retrieve_decision_data, fit_decision_threshold
 import KidneyAllocation: score, years_between, fractionalyears_between
 import KidneyAllocation: allocate_one_donor, allocate
 
@@ -40,10 +40,10 @@ data = retrieve_decision_data(donor_filepath, recipient_filepath)
 model = @formula(DECISION ~ log(KDRI) + CAN_AGE * KDRI * CAN_WAIT + CAN_AGE^2 * KDRI * CAN_WAIT^2 + CAN_BLOOD + DON_AGE)
 
 fm = glm(model, data, Bernoulli(), LogitLink())
+threshold = fit_decision_threshold(fm)
 
-dm = GLMDecisionModel(fm)
+dm = GLMDecisionModel(fm, threshold)
 
-threshold = fit_decision_threshold(dm)
 # ------------------------------------------------------------------------------------
 
 X = Matrix(select(data, Not(:DECISION)))
@@ -126,17 +126,19 @@ eligible_index = findall(eligible_mask)
 
 ranked_indices = KidneyAllocation.rank_eligible_indices_by_score(donor,waiting_recipients, eligible_index )
 
-@time chosen_index = allocate_one_donor(donor, waiting_recipients, dm, threshold)
+@time KidneyAllocation.acceptance_probability(dm, waiting_recipients[ranked_indices], donor)
 
-chosen_recipient = waiting_recipients[chosen_index]
+@time chosen_index = allocate_one_donor(donor, waiting_recipients[ranked_indices], dm)
+
+chosen_recipient = waiting_recipients[ranked_indices[chosen_index]]
 
 # Sanity checks
 score.(donor, chosen_recipient)
-KidneyAllocation.acceptance_probability(dm, chosen_recipient, donor)
+KidneyAllocation.acceptance_probability(dm, [chosen_recipient], donor)
 KidneyAllocation.decide(dm, threshold,chosen_recipient, donor)
 
 
-@time ind = allocate(new_donors, waiting_recipients, dm, threshold)
+@time ind = allocate(new_donors, waiting_recipients, dm)
 
 
 # Sanity checks
@@ -144,14 +146,11 @@ score(new_donors[100], waiting_recipients[ind[100]])
 KidneyAllocation.acceptance_probability(dm, waiting_recipients[ind[100]], new_donors[100])
 KidneyAllocation.decide(dm, threshold, waiting_recipients[ind[100]], new_donors[100])
 
-@time ind = allocate(new_donors, waiting_recipients, dm, threshold, until = 1)
+@time ind = allocate(new_donors, waiting_recipients, dm, until = 1)
 
 findlast(ind .!= 0)
 
 
-using BenchmarkTools
-@btime KidneyAllocation.acceptance_probability(dm, waiting_recipients[ind[100]], new_donors[100])
-@btime KidneyAllocation.rank_eligible_indices_by_score(donor,waiting_recipients, eligible_index )
 
 
 
