@@ -29,11 +29,11 @@ function acceptance_probability(dm::GLMDecisionModel, recipient::Recipient, dono
     mm = mismatch_count(donor, recipient)
 
     @inbounds begin
-        dm.df.KDRI[1]     = float(donor.kdri)
-        dm.df.CAN_AGE[1]  = float(years_between(recipient.birth, arrival))
-        dm.df.CAN_WAIT[1] = float(fractionalyears_between(recipient.dialysis, arrival))
+        dm.df.KDRI[1]     = donor.kdri
+        dm.df.CAN_AGE[1]  = years_between(recipient.birth, arrival)
+        dm.df.CAN_WAIT[1] = fractionalyears_between(recipient.dialysis, arrival)
         dm.df.CAN_BLOOD[1] = dm.blood_str[get_bloodtype(recipient)]
-        dm.df.DON_AGE[1]  = float(donor.age)
+        dm.df.DON_AGE[1]  = donor.age
         dm.df.MISMATCH[1] = mm
     end
 
@@ -61,7 +61,7 @@ function fit_decision_threshold(dm::GLMDecisionModel)
 
 end
 
-function decide(dm::AbstractDecisionModel, threshold::Real, recipient::Recipient, donor::Donor)
+function decide(dm::M, threshold::Real, recipient::Recipient, donor::Donor) where {M<:AbstractDecisionModel}
     
     # Acceptance probability
     p = acceptance_probability(dm, recipient, donor)
