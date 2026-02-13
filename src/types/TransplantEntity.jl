@@ -353,6 +353,24 @@ function get_arrival(t::TransplantEntity)
 end
 
 """
+    get_birth(r::Recipient)
+
+Get birth date of recipient `r`.
+"""
+function get_birth(r::Recipient)
+    return r.birth
+end
+
+"""
+    get_dialysis(r::Recipient)
+
+Get dialysis start date of recipient `r`.
+"""
+function get_dialysis(r::Recipient)
+    return r.dialysis
+end
+
+"""
     get_HLA(t::TransplantEntity)
 
 Get HLA of transplant entity `t` (a1, a2, b1, b2, dr1, dr2).

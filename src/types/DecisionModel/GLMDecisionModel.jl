@@ -1,49 +1,54 @@
 struct GLMDecisionModel <: AbstractDecisionModel
     fm::StatsModels.TableRegressionModel
-    df::DataFrame
-    blood_str::Dict{Any,String}
+    threshold::Real
 end
 
-function GLMDecisionModel(fm::StatsModels.TableRegressionModel)
-    # 1-row table with the predictor columns used by the model
+
+function acceptance_probability(dm::GLMDecisionModel, recipients::Vector{Recipient}, donor::Donor)
+    arrival = donor.arrival
+    n = length(recipients)
+
+    # Preallocate columns (types matter)
+    KDRI     = Vector{Float64}(undef, n)
+    DON_AGE  = Vector{Int64}(undef, n)
+    CAN_AGE  = Vector{Int64}(undef, n)
+    CAN_WAIT = Vector{Float64}(undef, n)
+    CAN_BLOOD = Vector{String}(undef, n)
+    MISMATCH = Vector{Int64}(undef, n) 
+
+    kdri = donor.kdri
+    don_age = donor.age
+
+    @inbounds for i in 1:n
+        r = recipients[i]
+
+        KDRI[i]     = kdri
+        DON_AGE[i]  = don_age
+        CAN_AGE[i]  = years_between(get_birth(r), arrival)
+        CAN_WAIT[i] = fractionalyears_between(get_dialysis(r), arrival)
+        CAN_BLOOD[i] = string(r.blood)
+        MISMATCH[i] = mismatch_count(donor, r)
+    end
+
     df = DataFrame(
-        KDRI      = Float64[1.0],
-        CAN_AGE   = Int64[50],
-        CAN_WAIT  = Float64[2.0],
-        CAN_BLOOD = String["O"],
-        DON_AGE   = Int64[50],
-        MISMATCH  = Int64[6]
+        KDRI = KDRI,
+        CAN_AGE = CAN_AGE,
+        CAN_WAIT = CAN_WAIT,
+        CAN_BLOOD = CAN_BLOOD,
+        DON_AGE = DON_AGE,
+        MISMATCH = MISMATCH,
     )
 
-    # Cache of bloodtype -> string to avoid allocations
-    blood_str = Dict{Any,String}(O=>"O", A=>"A", B=>"B", AB=>"AB")
-
-    return GLMDecisionModel(fm, df, blood_str)
+    return predict(dm.fm, df)
 end
 
 function acceptance_probability(dm::GLMDecisionModel, recipient::Recipient, donor::Donor)
-    arrival = donor.arrival
-
-    mm = mismatch_count(donor, recipient)
-
-    @inbounds begin
-        dm.df.KDRI[1]     = donor.kdri
-        dm.df.CAN_AGE[1]  = years_between(recipient.birth, arrival)
-        dm.df.CAN_WAIT[1] = fractionalyears_between(recipient.dialysis, arrival)
-        dm.df.CAN_BLOOD[1] = dm.blood_str[get_bloodtype(recipient)]
-        dm.df.DON_AGE[1]  = donor.age
-        dm.df.MISMATCH[1] = mm
-    end
-
-    # Acceptance probability
-    p = predict(dm.fm, dm.df)[1]
-
-    return p
+    p = acceptance_probability(dm, [recipient], donor::Donor)
+    return p[1]
 end
 
-function fit_decision_threshold(dm::GLMDecisionModel)
 
-    fm = dm.fm
+function fit_decision_threshold(fm::StatsModels.TableRegressionModel)
 
     gt = Int64.(response(fm))
 
