@@ -45,7 +45,8 @@ function retrieve_decision_data(donors_filepath::String, recipients_filepath::St
     filter!(row -> row.CAN_ID ∈ unique(df_recipients.CAN_ID), data)
 
     age = Int64[]
-    waittime = Union{Float64,Missing}[]
+    # waittime = Union{Float64,Missing}[]
+    waittime = Float64[]
     blood = String[]
     n_mismatch = Int64[]
 

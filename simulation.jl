@@ -1,7 +1,7 @@
 using Pkg
 Pkg.activate(".")
 
-using Dates, CSV, DataFrames, Distributions, GLM, JLD2, Random
+using Dates, CSV, DataFrames, DecisionTree, Distributions, GLM, JLD2, Random
 
 using KidneyAllocation
 
@@ -45,6 +45,51 @@ dm = GLMDecisionModel(fm)
 
 threshold = fit_decision_threshold(dm)
 # ------------------------------------------------------------------------------------
+
+X = Matrix(select(data, Not(:DECISION)))
+y = Int.(data.DECISION)
+
+
+m = DecisionTreeClassifier(
+                max_depth=10, min_samples_leaf=50,
+                pruning_purity_threshold=1
+            )
+
+@time DecisionTree.fit!(m, X, y)
+
+
+
+
+data.is_bloodtype_O = Int.(data.CAN_BLOOD .== "O")
+data.is_bloodtype_A = Int.(data.CAN_BLOOD .== "A")
+data.is_bloodtype_B = Int.(data.CAN_BLOOD .== "B")
+data.is_bloodtype_AB = Int.(data.CAN_BLOOD .== "AB")
+
+variable_order = Symbol.([
+"DON_AGE"
+ "KDRI"
+ "CAN_AGE"
+ "CAN_WAIT"
+ "MISMATCH"
+ "is_bloodtype_O"
+ "is_bloodtype_A"
+ "is_bloodtype_B"
+ "is_bloodtype_AB"])
+
+X = Matrix(select(data, variable_order))
+
+y = Int.(data.DECISION)
+
+m = DecisionTreeClassifier(
+                max_depth=10, min_samples_leaf=50,
+                pruning_purity_threshold=1
+            )
+
+@time DecisionTree.fit!(m, X, y)
+
+
+
+
 
 # Retrieve the waiting recipients at January 1st, 2014
 ind_active = is_active.(recipients, Date(2013, 12, 31))
