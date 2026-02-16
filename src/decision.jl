@@ -125,17 +125,17 @@ function allocate_one_donor(
     eligible_indices = get_eligible_recipient_indices(donor, recipients, is_unallocated)
     ranked_indices = rank_eligible_indices_by_score(donor, recipients, eligible_indices)
 
-    p = acceptance_probability(dm, recipients[ranked_indices], donor)
+    # p = acceptance_probability(dm, recipients[ranked_indices], donor)
+    # acceptation = p .> dm.threshold
 
-    acceptation = p .> dm.threshold
+    acceptation = decide(dm, recipients[ranked_indices], donor)
 
     if any(acceptation)
         ind = findfirst(acceptation)
+        return ranked_indices[ind]
     else
-        ind = 0
+        return 0
     end
-
-    return ind
 
 end
 

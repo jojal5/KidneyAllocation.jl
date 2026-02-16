@@ -1,6 +1,6 @@
 module KidneyAllocation
 
-    using CSV, DataFrames, Dates, Distributions, Random
+    using CSV, DataFrames, Dates, DecisionTree, Distributions, GLM, Random
     using StatsModels # Needed when passing a glm fitted model as a function argument
     using MLBase, Optim
 
@@ -19,6 +19,6 @@ module KidneyAllocation
     ABOGroup, O, A, B, AB,
     HLA,
     TransplantEntity, Donor, Recipient,
-    AbstractDecisionModel, GLMDecisionModel
+    AbstractDecisionModel, GLMDecisionModel, TreeDecisionModel
 
 end

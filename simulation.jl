@@ -9,7 +9,7 @@ import KidneyAllocation: build_recipient_registry, load_recipient, is_active, is
 import KidneyAllocation: load_donor, build_donor_registry
 import KidneyAllocation: shift_recipient_timeline, set_donor_arrival
 import KidneyAllocation: retrieve_decision_data, fit_decision_threshold
-import KidneyAllocation: score, years_between, fractionalyears_between
+import KidneyAllocation: score, years_between, fractionalyears_between, get_birth, get_dialysis, mismatch_count
 import KidneyAllocation: allocate_one_donor, allocate
 
 
@@ -34,7 +34,7 @@ filter!(row -> row.DECISION == "Acceptation", df2)
 λₒ = length(unique(df2.CAN_ID)) / 6
 
 
-# Fit decision model
+# Fit decision model (GLM based)
 data = retrieve_decision_data(donor_filepath, recipient_filepath)
 
 model = @formula(DECISION ~ log(KDRI) + CAN_AGE * KDRI * CAN_WAIT + CAN_AGE^2 * KDRI * CAN_WAIT^2 + CAN_BLOOD + DON_AGE)
@@ -43,30 +43,14 @@ fm = glm(model, data, Bernoulli(), LogitLink())
 threshold = fit_decision_threshold(fm)
 
 dm = GLMDecisionModel(fm, threshold)
-
 # ------------------------------------------------------------------------------------
 
-X = Matrix(select(data, Not(:DECISION)))
-y = Int.(data.DECISION)
 
+# Fit decision model (Classification tree based)
+data = retrieve_decision_data(donor_filepath, recipient_filepath)
 
-m = DecisionTreeClassifier(
-                max_depth=10, min_samples_leaf=50,
-                pruning_purity_threshold=1
-            )
-
-@time DecisionTree.fit!(m, X, y)
-
-
-
-
-data.is_bloodtype_O = Int.(data.CAN_BLOOD .== "O")
-data.is_bloodtype_A = Int.(data.CAN_BLOOD .== "A")
-data.is_bloodtype_B = Int.(data.CAN_BLOOD .== "B")
-data.is_bloodtype_AB = Int.(data.CAN_BLOOD .== "AB")
-
-variable_order = Symbol.([
-"DON_AGE"
+features = Symbol.([
+ "DON_AGE"
  "KDRI"
  "CAN_AGE"
  "CAN_WAIT"
@@ -76,7 +60,7 @@ variable_order = Symbol.([
  "is_bloodtype_B"
  "is_bloodtype_AB"])
 
-X = Matrix(select(data, variable_order))
+ X = KidneyAllocation.construct_feature_matrix_from_df(data, features)
 
 y = Int.(data.DECISION)
 
@@ -87,6 +71,13 @@ m = DecisionTreeClassifier(
 
 @time DecisionTree.fit!(m, X, y)
 
+dm = TreeDecisionModel(m, features)
+
+acceptation = DecisionTree.predict(m, X)
+
+DecisionTree.confusion_matrix(y, DecisionTree.predict(m, X, .5))
+
+# ------------------------------------------------------------------------------------
 
 
 

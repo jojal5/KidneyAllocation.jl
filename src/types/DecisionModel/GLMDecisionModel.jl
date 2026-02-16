@@ -48,11 +48,20 @@ function acceptance_probability(dm::GLMDecisionModel, recipient::Recipient, dono
 end
 
 
+function decide(dm::GLMDecisionModel, recipients::Vector{Recipient}, donor::Donor)
+    
+    # Acceptance probability
+    p = acceptance_probability(dm, recipients, donor)
+
+    # Decision
+    return p .> dm.threshold
+end
+
 function fit_decision_threshold(fm::StatsModels.TableRegressionModel)
 
     gt = Int64.(response(fm))
 
-    θ̂ = predict(fm)
+    θ̂ = GLM.predict(fm)
 
     fobj(u::Real) = -f1score(roc(gt, θ̂, u))
 
