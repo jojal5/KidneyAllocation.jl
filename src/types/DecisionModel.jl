@@ -105,3 +105,20 @@ function fit_threshold_prevalence(
 end
 
 
+function acceptance_probability(dm::M, recipient::Recipient, donor::Donor) where M<:AbstractDecisionModel
+    return acceptance_probability(dm, [recipient], donor)[1]
+end
+
+function decide(dm::M, recipients::Vector{Recipient}, donor::Donor) where M<:AbstractDecisionModel
+    
+    p = acceptance_probability(dm, recipients, donor)
+
+    acceptation = p .> dm.threshold
+
+    return acceptation
+
+end
+
+function decide(dm::M, recipient::Recipient, donor::Donor) where M<:AbstractDecisionModel
+    return decide(dm, [recipient], donor)[1]
+end

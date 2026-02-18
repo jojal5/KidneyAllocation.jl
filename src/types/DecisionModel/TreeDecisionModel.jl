@@ -3,6 +3,7 @@
 struct TreeDecisionModel <: AbstractDecisionModel
     fm::DecisionTree.DecisionTreeClassifier
     features::Vector{Symbol}
+    threshold::Real
 end
 
 function construct_feature_matrix(dm::TreeDecisionModel, recipients::Vector{Recipient}, donor::Donor)
@@ -71,16 +72,4 @@ function acceptance_probability(dm::TreeDecisionModel, recipients::Vector{Recipi
     return p[:,2]
 end
 
-function acceptance_probability(dm::TreeDecisionModel, recipient::Recipient, donor::Donor)::Float64
-    return acceptance_probability(dm, Recipient[recipient], donor)[1]
-end
 
-function decide(dm::TreeDecisionModel, recipients::Vector{Recipient}, donor::Donor)
-    
-    X = construct_feature_matrix(dm, recipients, donor)
-
-    acceptation = DecisionTree.predict(dm.fm, X) .== 1
-
-    return acceptation
-
-end

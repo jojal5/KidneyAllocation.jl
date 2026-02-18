@@ -8,7 +8,7 @@ using KidneyAllocation
 import KidneyAllocation: build_recipient_registry, load_recipient, is_active, is_expired, is_abo_compatible
 import KidneyAllocation: load_donor, build_donor_registry
 import KidneyAllocation: shift_recipient_timeline, set_donor_arrival
-import KidneyAllocation: retrieve_decision_data, fit_decision_threshold
+import KidneyAllocation: retrieve_decision_data, fit_threshold_f1, fit_threshold_prevalence
 import KidneyAllocation: score, years_between, fractionalyears_between, get_birth, get_dialysis, mismatch_count
 import KidneyAllocation: allocate_one_donor, allocate
 
@@ -40,7 +40,12 @@ data = retrieve_decision_data(donor_filepath, recipient_filepath)
 model = @formula(DECISION ~ log(KDRI) + CAN_AGE * KDRI * CAN_WAIT + CAN_AGE^2 * KDRI * CAN_WAIT^2 + CAN_BLOOD + DON_AGE)
 
 fm = glm(model, data, Bernoulli(), LogitLink())
-threshold = fit_decision_threshold(fm)
+
+gt = data.DECISION
+p = GLM.predict(fm)
+
+# threshold = fit_threshold_f1(gt, p)
+threshold = fit_threshold_prevalence(gt, p)
 
 dm = GLMDecisionModel(fm, threshold)
 # ------------------------------------------------------------------------------------
@@ -62,7 +67,8 @@ features = Symbol.([
 
  X = KidneyAllocation.construct_feature_matrix_from_df(data, features)
 
-y = Int.(data.DECISION)
+# y = Int.(data.DECISION)
+y = data.DECISION
 
 m = DecisionTreeClassifier(
                 max_depth=10, min_samples_leaf=50,
@@ -71,53 +77,14 @@ m = DecisionTreeClassifier(
 
 @time DecisionTree.fit!(m, X, y)
 
-dm = TreeDecisionModel(m, features)
+gt = data.DECISION
+p = DecisionTree.predict_proba(m, X)[:,2]
 
-acceptation = DecisionTree.predict(m, X)
+threshold = fit_threshold_prevalence(gt, p)
 
-fit_decision_threshold(m, X, y)
-
-
-DecisionTree.confusion_matrix(y, DecisionTree.predict(m, X, .5))
-
-n = length(y)
-ȳ = mean(y)
-p = DecisionTree.predict_proba(m, X)[:, 2]
-fobj(u::Real) = (count(p .> u)/n - ȳ)^2
-fobj(.2)
-
-res = optimize(fobj, 0.01, 0.75)
-u = res.minimizer
-
-fobj(u)
-
-count(p.>u)
-sum(y)
-
-using Optim
-
-function fit_decision_threshold(fm::DecisionTreeClassifier, X::AbstractMatrix{<:Real}, y::AbstractVector{<:Int})
-
-    n = length(y)
-    ȳ = mean(y)
-    p = DecisionTree.predict_proba(fm, X)[:,2]
-
-    # fobj(u::Real) = -f1score(roc(gt, θ̂, u))
-    fobj(u::Real) = (count(p .> u)/n - ȳ)^2
-
-    res = optimize(fobj, 0.01, 0.75)
-
-    u = res.minimizer
-
-    return u
-
-end
-
-
+dm = TreeDecisionModel(m, features, threshold)
 
 # ------------------------------------------------------------------------------------
-
-
 
 
 # Retrieve the waiting recipients at January 1st, 2014
@@ -142,7 +109,7 @@ new_donors = set_donor_arrival.(sampled_donors, tₒ)                           
 # KidneyAllocation.get_arrival.(new_donors)
 
 
-donor = new_donors[1000]
+donor = new_donors[4]
 arrival = donor.arrival
 # eligible_index = is_active.(waiting_recipients, arrival) .&& is_abo_compatible.(donor, waiting_recipients)
 # eligible_recipients = waiting_recipients[eligible_index]
@@ -163,8 +130,8 @@ chosen_recipient = waiting_recipients[ranked_indices[chosen_index]]
 
 # Sanity checks
 score.(donor, chosen_recipient)
-KidneyAllocation.acceptance_probability(dm, [chosen_recipient], donor)
-KidneyAllocation.decide(dm, threshold,chosen_recipient, donor)
+KidneyAllocation.acceptance_probability(dm, chosen_recipient, donor)
+KidneyAllocation.decide(dm, chosen_recipient, donor)
 
 
 @time ind = allocate(new_donors, waiting_recipients, dm)
@@ -173,7 +140,7 @@ KidneyAllocation.decide(dm, threshold,chosen_recipient, donor)
 # Sanity checks
 score(new_donors[100], waiting_recipients[ind[100]])
 KidneyAllocation.acceptance_probability(dm, waiting_recipients[ind[100]], new_donors[100])
-KidneyAllocation.decide(dm, threshold, waiting_recipients[ind[100]], new_donors[100])
+KidneyAllocation.decide(dm, waiting_recipients[ind[100]], new_donors[100])
 
 @time ind = allocate(new_donors, waiting_recipients, dm, until = 1)
 
