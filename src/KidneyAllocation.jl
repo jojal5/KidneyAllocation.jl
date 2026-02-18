@@ -2,7 +2,6 @@ module KidneyAllocation
 
     using CSV, DataFrames, Dates, DecisionTree, Distributions, GLM, Random
     using StatsModels # Needed when passing a glm fitted model as a function argument
-    using MLBase, Optim
 
     include("types/ABOGroup.jl")
     include("types/TransplantEntity.jl")

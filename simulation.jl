@@ -75,7 +75,45 @@ dm = TreeDecisionModel(m, features)
 
 acceptation = DecisionTree.predict(m, X)
 
+fit_decision_threshold(m, X, y)
+
+
 DecisionTree.confusion_matrix(y, DecisionTree.predict(m, X, .5))
+
+n = length(y)
+ȳ = mean(y)
+p = DecisionTree.predict_proba(m, X)[:, 2]
+fobj(u::Real) = (count(p .> u)/n - ȳ)^2
+fobj(.2)
+
+res = optimize(fobj, 0.01, 0.75)
+u = res.minimizer
+
+fobj(u)
+
+count(p.>u)
+sum(y)
+
+using Optim
+
+function fit_decision_threshold(fm::DecisionTreeClassifier, X::AbstractMatrix{<:Real}, y::AbstractVector{<:Int})
+
+    n = length(y)
+    ȳ = mean(y)
+    p = DecisionTree.predict_proba(fm, X)[:,2]
+
+    # fobj(u::Real) = -f1score(roc(gt, θ̂, u))
+    fobj(u::Real) = (count(p .> u)/n - ȳ)^2
+
+    res = optimize(fobj, 0.01, 0.75)
+
+    u = res.minimizer
+
+    return u
+
+end
+
+
 
 # ------------------------------------------------------------------------------------
 

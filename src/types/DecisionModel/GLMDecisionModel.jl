@@ -56,19 +56,3 @@ function decide(dm::GLMDecisionModel, recipients::Vector{Recipient}, donor::Dono
     # Decision
     return p .> dm.threshold
 end
-
-function fit_decision_threshold(fm::StatsModels.TableRegressionModel)
-
-    gt = Int64.(response(fm))
-
-    θ̂ = GLM.predict(fm)
-
-    fobj(u::Real) = -f1score(roc(gt, θ̂, u))
-
-    res = optimize(fobj, 0.01, 0.75)
-
-    u = res.minimizer
-
-    return u
-
-end
