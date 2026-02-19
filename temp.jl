@@ -1,66 +1,43 @@
 using Pkg
 Pkg.activate(".")
 
-using Dates, CSV, DataFrames, Distributions, GLM, JLD2, Random
+using Dates, CSV, DataFrames, Distributions, GLM, JLD2, Random, Test
 
 using KidneyAllocation
 
-import KidneyAllocation: build_recipient_registry, load_recipient, is_active, is_expired, is_abo_compatible
-import KidneyAllocation: load_donor, build_donor_registry
-import KidneyAllocation: shift_recipient_timeline, set_donor_arrival
-import KidneyAllocation: retrieve_decision_data, fit_decision_threshold, get_decision
-import KidneyAllocation: score, years_between, fractionalyears_between
-import KidneyAllocation: allocate_one_donor, allocate
-import KidneyAllocation: decide, fit_decision_threshold
-
-recipients_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Candidates.csv"
-cpra_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/CandidatesCPRA.csv"
-
-recipients = build_recipient_registry(recipients_filepath, cpra_filepath)
+recipients = [
+        Recipient(Date(1979,1,1), Date(1995,1,1), Date(1998,1,1), O, 68, 203, 39, 77, 15, 17, 0),
+        Recipient(Date(1981,1,1), Date(1997,1,1), Date(2000,6,1), A, 69, 2403, 7, 35, 4, 103, 10),
+        Recipient(Date(1963,1,1), Date(1998,1,1), Date(2001,5,1), B, 25, 68, 67, 5102, 11, 16, 20),
+    ]
 
 
-donors_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Donors.csv"
+"""
+    sim_cpra_compatibility(recipient) -> Bool
 
-donors = build_donor_registry(donors_filepath)
+Return `true` if the recipient is compatible with a donor, based on CPRA.
 
+Compatibility is simulated as a Bernoulli trial with probability
+`1 - recipient.cpra/100`.
+"""
+function sim_cpra_compatibility(recipient::Recipient)
+    return rand() ≥ recipient.cpra / 100
+end
 
-# Fit decision model
-data = retrieve_decision_data(donors_filepath, recipients_filepath)
+@testset "sim_cpra_compatibility" begin
 
-model = @formula(DECISION ~ log(KDRI) + CAN_AGE * KDRI * CAN_WAIT + CAN_AGE^2 * KDRI * CAN_WAIT^2 + CAN_BLOOD + DON_AGE + MISMATCH)
+    import KidneyAllocation.sim_cpra_compatibility
 
-fm = glm(model, data, Bernoulli(), LogitLink())
-u = fit_decision_threshold(fm)
+    recipients = [
+        Recipient(Date(1979,1,1), Date(1995,1,1), Date(1998,1,1), O, 68, 203, 39, 77, 15, 17, 0),
+        Recipient(Date(1981,1,1), Date(1997,1,1), Date(2000,6,1), A, 69, 2403, 7, 35, 4, 103, 100),
+    ]
 
+    @test sim_cpra_compatibility(recipients[1]) == true
+    @test sim_cpra_compatibility(recipients[2]) == false
 
-dm = GLMDecisionModel(fm)
-
-u = fit_decision_threshold(dm)
-
-r = Recipient(Date(1979,1,1), Date(1995,1,1), Date(1998,1,1), O, 68, 203, 39, 77, 15, 17, 0)
-d = Donor(Date(2000,1,1), 40, O, 34, 3401, 73, 77, 3, 17, 1.5)
+end
 
 
 
-@time decide(dm, u, r, d)
-
-
-
-# ------------------------------------------------------------------------------------
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+@time sim_cpra_compatibility.(recipients)

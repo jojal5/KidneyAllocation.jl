@@ -461,4 +461,18 @@
         @test mismatch_count(r, d) == 3
     end
 
+    @testset "sim_cpra_compatibility" begin
+
+    import KidneyAllocation.sim_cpra_compatibility
+
+    recipients = [
+        Recipient(Date(1979,1,1), Date(1995,1,1), Date(1998,1,1), O, 68, 203, 39, 77, 15, 17, 0),
+        Recipient(Date(1981,1,1), Date(1997,1,1), Date(2000,6,1), A, 69, 2403, 7, 35, 4, 103, 100),
+    ]
+
+    @test sim_cpra_compatibility(recipients[1]) == true
+    @test sim_cpra_compatibility(recipients[2]) == false
+
+end
+
 end
