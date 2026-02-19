@@ -105,3 +105,21 @@ function creatinine_mgdl(creat_umol_L::Real)
     return creat_umol_L / 88.4
 end
 
+"""
+    comes_before(v::Vector{Int}, a::Int, b::Int) -> Bool
+
+Return `true` if `a` appears before `b` in `v`, and `false` otherwise.
+"""
+function comes_before(v::AbstractVector{<:Int}, a::Int, b::Int)
+    @assert a ≠ b "`a` should be different than `b, got a = b = $a"
+
+    found_a = false
+    for x in v
+        if x == a
+            found_a = true
+        elseif x == b
+            return found_a
+        end
+    end
+    return false
+end

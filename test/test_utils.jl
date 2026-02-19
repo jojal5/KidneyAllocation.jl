@@ -28,7 +28,7 @@
 
     @testset "sample_days" begin
         import KidneyAllocation.sample_days
-        
+
         d1 = Date(2024, 1, 1)
         d2 = Date(2024, 1, 10)
 
@@ -48,6 +48,19 @@
         @test creatinine_mgdl(1000) ≈ (1000 / 88.4)
 
         @test_throws AssertionError creatinine_mgdl(-5)
+
+    end
+
+    @testset "comes_before" begin
+        import KidneyAllocation.comes_before
+
+        v = [1, 2, 3, 4, 5]
+
+        @test_throws AssertionError comes_before(v, 4, 4)
+        @test comes_before(v, 2, 4) == true
+        @test comes_before(v, 4, 2) == false
+        @test comes_before(v, -2, 4) == false
+        @test comes_before(v, 2, 0) == false
 
     end
 

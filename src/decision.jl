@@ -121,13 +121,19 @@ function allocate_one_donor(
     dm::AbstractDecisionModel,
     is_unallocated::BitVector=trues(length(recipients))
 )
-
     eligible_indices = get_eligible_recipient_indices(donor, recipients, is_unallocated)
     ranked_indices = rank_eligible_indices_by_score(donor, recipients, eligible_indices)
 
-    # p = acceptance_probability(dm, recipients[ranked_indices], donor)
-    # acceptation = p .> dm.threshold
+    return allocate_one_donor(donor, recipients, dm, ranked_indices)
 
+end
+
+function allocate_one_donor(
+    donor::Donor,
+    recipients::Vector{Recipient},
+    dm::AbstractDecisionModel,
+    ranked_indices::AbstractVector{<:Int}
+)
     acceptation = decide(dm, recipients[ranked_indices], donor)
 
     if any(acceptation)
@@ -137,6 +143,16 @@ function allocate_one_donor(
         return 0
     end
 
+end
+
+function allocate_one_donor(
+    donor::Donor,
+    recipients::Vector{Recipient},
+    dm::AbstractDecisionModel,
+    ranked_indices::Int
+)
+    
+    return allocate_one_donor(donor, recipients, dm, [ranked_indices])
 end
 
 
