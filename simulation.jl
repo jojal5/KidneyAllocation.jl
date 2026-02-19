@@ -1,15 +1,15 @@
 using Pkg
 Pkg.activate(".")
 
-using Dates, CSV, DataFrames, Distributions, GLM, JLD2, Random
+using Dates, CSV, DataFrames, DecisionTree, Distributions, GLM, JLD2, Random
 
 using KidneyAllocation
 
 import KidneyAllocation: build_recipient_registry, load_recipient, is_active, is_expired, is_abo_compatible
 import KidneyAllocation: load_donor, build_donor_registry
 import KidneyAllocation: shift_recipient_timeline, set_donor_arrival
-import KidneyAllocation: retrieve_decision_data, fit_decision_threshold, get_decision
-import KidneyAllocation: score, years_between, fractionalyears_between
+import KidneyAllocation: retrieve_decision_data, fit_threshold_f1, fit_threshold_prevalence
+import KidneyAllocation: score, years_between, fractionalyears_between, get_birth, get_dialysis, mismatch_count
 import KidneyAllocation: allocate_one_donor, allocate
 
 
@@ -34,15 +34,58 @@ filter!(row -> row.DECISION == "Acceptation", df2)
 λₒ = length(unique(df2.CAN_ID)) / 6
 
 
-# Fit decision model
+# Fit decision model (GLM based)
 data = retrieve_decision_data(donor_filepath, recipient_filepath)
 
 model = @formula(DECISION ~ log(KDRI) + CAN_AGE * KDRI * CAN_WAIT + CAN_AGE^2 * KDRI * CAN_WAIT^2 + CAN_BLOOD + DON_AGE)
 
 fm = glm(model, data, Bernoulli(), LogitLink())
 
-u = fit_decision_threshold(fm)
+gt = data.DECISION
+p = GLM.predict(fm)
+
+# threshold = fit_threshold_f1(gt, p)
+threshold = fit_threshold_prevalence(gt, p)
+
+dm = GLMDecisionModel(fm, threshold)
 # ------------------------------------------------------------------------------------
+
+
+# Fit decision model (Classification tree based)
+data = retrieve_decision_data(donor_filepath, recipient_filepath)
+
+features = Symbol.([
+ "DON_AGE"
+ "KDRI"
+ "CAN_AGE"
+ "CAN_WAIT"
+ "MISMATCH"
+ "is_bloodtype_O"
+ "is_bloodtype_A"
+ "is_bloodtype_B"
+ "is_bloodtype_AB"])
+
+ X = KidneyAllocation.construct_feature_matrix_from_df(data, features)
+
+# y = Int.(data.DECISION)
+y = data.DECISION
+
+m = DecisionTreeClassifier(
+                max_depth=10, min_samples_leaf=50,
+                pruning_purity_threshold=1
+            )
+
+@time DecisionTree.fit!(m, X, y)
+
+gt = data.DECISION
+p = DecisionTree.predict_proba(m, X)[:,2]
+
+threshold = fit_threshold_prevalence(gt, p)
+
+dm = TreeDecisionModel(m, features, threshold)
+
+# ------------------------------------------------------------------------------------
+
 
 # Retrieve the waiting recipients at January 1st, 2014
 ind_active = is_active.(recipients, Date(2013, 12, 31))
@@ -66,7 +109,7 @@ new_donors = set_donor_arrival.(sampled_donors, tₒ)                           
 # KidneyAllocation.get_arrival.(new_donors)
 
 
-donor = new_donors[1000]
+donor = new_donors[4]
 arrival = donor.arrival
 # eligible_index = is_active.(waiting_recipients, arrival) .&& is_abo_compatible.(donor, waiting_recipients)
 # eligible_recipients = waiting_recipients[eligible_index]
@@ -79,24 +122,36 @@ eligible_index = findall(eligible_mask)
 
 ranked_indices = KidneyAllocation.rank_eligible_indices_by_score(donor,waiting_recipients, eligible_index )
 
-@time chosen_index = allocate_one_donor(donor, waiting_recipients, fm, u)
+@time KidneyAllocation.acceptance_probability(dm, waiting_recipients[ranked_indices], donor)
 
-chosen_recipient = waiting_recipients[chosen_index]
+@time chosen_index = allocate_one_donor(donor, waiting_recipients[ranked_indices], dm)
+
+chosen_recipient = waiting_recipients[ranked_indices[chosen_index]]
 
 # Sanity checks
 score.(donor, chosen_recipient)
-get_decision(donor, chosen_recipient, fm, u)
+KidneyAllocation.acceptance_probability(dm, chosen_recipient, donor)
+KidneyAllocation.decide(dm, chosen_recipient, donor)
 
 
-@time ind = allocate(new_donors, waiting_recipients, fm, u)
+@time ind = allocate(new_donors, waiting_recipients, dm)
+
 
 # Sanity checks
 score(new_donors[100], waiting_recipients[ind[100]])
-get_decision(new_donors[100], waiting_recipients[ind[100]], fm, u)
+KidneyAllocation.acceptance_probability(dm, waiting_recipients[ind[100]], new_donors[100])
+KidneyAllocation.decide(dm, waiting_recipients[ind[100]], new_donors[100])
 
-@time ind = allocate(new_donors, waiting_recipients, fm, u, until = 1)
+@time ind = allocate(new_donors, waiting_recipients, dm, until = 1)
 
 findlast(ind .!= 0)
+
+
+
+
+
+
+
 
 import KidneyAllocation: generate_arrivals, reconstruct_donors, reconstruct_recipients, simulate_initial_state_indexed
 

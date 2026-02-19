@@ -409,7 +409,7 @@
 
     @testset "property extraction" begin
 
-        import KidneyAllocation: get_arrival, get_HLA, get_bloodtype
+        import KidneyAllocation: get_arrival, get_HLA, get_HLA_A, get_HLA_B, get_HLA_DR, get_bloodtype
 
         arrival = Date(2025, 1, 1)
 
@@ -430,6 +430,9 @@
 
         @test get_arrival(d) == arrival
         @test get_HLA(d) == (a1, a2, b1, b2, dr1, dr2)
+        @test get_HLA_A(d) == (a1, a2)
+        @test get_HLA_B(d) == (b1, b2)
+        @test get_HLA_DR(d) == (dr1, dr2)
         @test get_bloodtype(d) == A
 
         birth = Date(1980, 1, 1)
@@ -444,6 +447,18 @@
         @test get_HLA(r) == (a1, a2, b1, b2, dr1, dr2)
         @test get_bloodtype(r) == A
 
+    end
+
+    @testset "mismatch_count" begin
+        import KidneyAllocation: get_HLA_A, get_HLA_B, get_HLA_DR, mismatch_locus, mismatch_count 
+        r = Recipient(Date(1979,1,1), Date(1995,1,1), Date(1998,1,1), O, 68, 203, 73, 77, 15, 17, 0)
+        d = Donor(Date(2000,1,1), 40, O, 34, 3401, 73, 77, 3, 17, 1.5)
+
+        @test mismatch_locus(get_HLA_A(r),get_HLA_A(d)) == 2
+        @test mismatch_locus(get_HLA_B(r),get_HLA_B(d)) == 0
+        @test mismatch_locus(get_HLA_DR(r),get_HLA_DR(d)) == 1
+
+        @test mismatch_count(r, d) == 3
     end
 
 end
