@@ -1,6 +1,5 @@
 @testset "decision.jl" begin
 
-
     @testset "get_eligible_recipient_indice" begin
 
         import KidneyAllocation.get_eligible_recipient_indices
@@ -46,6 +45,118 @@
         ranked_indices = rank_eligible_indices_by_score(donor, recipients, eligible_indices)
 
         @test ranked_indices == [3, 2]
+
+    end
+
+    @load "data/tree_decision_model.jld2"
+
+    @testset "allocate_one_donor()" begin
+        import KidneyAllocation: allocate_one_donor
+
+        @testset "Eligible recipient with the higher score accept the offer" begin
+
+            # Registry (tiny and fakes)
+            recipients = [
+                Recipient(Date(1981, 1, 1), Date(1997, 1, 1), Date(2000, 6, 1), O, 69, 2403, 7, 35, 4, 103, 0),
+                Recipient(Date(1969, 1, 1), Date(1995, 1, 1), Date(1996, 1, 1), O, 68, 203, 39, 77, 15, 17, 0),
+            ]
+
+            donor = Donor(Date(2001, 1, 1), 55, O, 2, 33, 37, 53, 4, 11, 1.2)
+
+            is_unallocated = trues(length(recipients))
+
+            # Les deux candidats sont éligibles, les deux accepteraient l'offre et le deuxième a le score le plus élevé. C'est donc au 2e que l'offre sera attribuée.
+            @test allocate_one_donor(donor, recipients, dm, is_unallocated) == 2
+
+            # Lorsque le 2e candidat a reçu une offre, il ne fait plus partie de la compétition et le premier devrait recevoir l'offre similaire.
+            is_unallocated[2] = false
+            @test allocate_one_donor(donor, recipients, dm, is_unallocated) == 1
+
+        end
+
+        @testset "Eligible recipient with the higher score refuses the offer, the second accept" begin
+
+            recipients = [
+                Recipient(Date(1981, 1, 1), Date(1997, 1, 1), Date(2000, 6, 1), O, 69, 2403, 7, 35, 4, 103, 0),
+                Recipient(Date(1939, 1, 1), Date(1995, 1, 1), Date(1996, 1, 1), O, 69, 203, 39, 77, 15, 17, 0),
+            ]
+
+            donor = Donor(Date(2001, 1, 1), 65, O, 69, 2403, 7, 35, 4, 103, 1.5)
+
+            # Les deux candidats sont éligibles, le 2e accepterait l'offre, mais le 1er a le score le plus élevé. C'est donc au 2e que l'offre sera attribuée.
+            @test allocate_one_donor(donor, recipients, dm) == 2
+        end
+
+        @testset "Eligible recipients refuse the offer" begin
+
+            recipients = [
+                Recipient(Date(1981, 1, 1), Date(1997, 1, 1), Date(2000, 6, 1), O, 69, 2403, 7, 35, 4, 103, 0),
+                Recipient(Date(1949, 1, 1), Date(1997, 1, 1), Date(1996, 1, 1), O, 68, 203, 39, 77, 15, 17, 0),
+            ]
+
+            donor = Donor(Date(2001, 1, 1), 45, O, 2, 33, 37, 53, 4, 11, 1.6)
+
+            # Les deux candidats sont éligibles, les deux refuseraient l'offre. L'offre n'est donc pas attribuée
+            @test allocate_one_donor(donor, recipients, dm) == 0
+        end
+    end
+
+    @testset "allocate" begin
+
+        import KidneyAllocation.allocate
+
+        @testset "allocation without refusal" begin
+
+            recipients = [
+                Recipient(Date(1981, 1, 1), Date(1997, 1, 1), Date(2000, 6, 1), O, 69, 2403, 7, 35, 4, 103, 0),
+                Recipient(Date(1969, 1, 1), Date(1995, 1, 1), Date(1996, 1, 1), O, 68, 203, 39, 77, 15, 17, 0),
+            ]
+
+            donors = [
+                Donor(Date(2001, 1, 1), 55, O, 2, 33, 37, 53, 4, 11, 1.2),
+                Donor(Date(2001, 1, 2), 55, O, 2, 33, 37, 53, 4, 11, 1.2)
+            ]
+
+            # Both donors attributed to the recipient with the highest score
+            @test allocate(donors, recipients, dm) == [2, 1]
+
+        end
+
+        @testset "allocation begining with a refusal" begin
+
+            recipients = [
+                Recipient(Date(1981, 1, 1), Date(1997, 1, 1), Date(2000, 6, 1), O, 69, 2403, 7, 35, 4, 103, 0),
+                Recipient(Date(1969, 1, 1), Date(1995, 1, 1), Date(1996, 1, 1), O, 68, 203, 39, 77, 15, 17, 0),
+            ]
+
+            donors = [
+                Donor(Date(2001, 1, 1), 55, O, 2, 33, 37, 53, 4, 11, 1.6),
+                Donor(Date(2001, 1, 2), 55, O, 2, 33, 37, 53, 4, 11, 1.2),
+                Donor(Date(2001, 1, 3), 55, O, 2, 33, 37, 53, 4, 11, 1.2)
+            ]
+
+            # First donor not accepted, both following donors attributed to the recipient with the highest score
+            @test allocate(donors, recipients, dm) == [0, 2, 1]
+
+        end
+
+        @testset "allocation until a specific recipient accept an offer" begin
+
+            recipients = [
+                Recipient(Date(1981, 1, 1), Date(1997, 1, 1), Date(2000, 6, 1), O, 69, 2403, 7, 35, 4, 103, 0),
+                Recipient(Date(1969, 1, 1), Date(1995, 1, 1), Date(1996, 1, 1), O, 68, 203, 39, 77, 15, 17, 0),
+            ]
+
+            donors = [
+                Donor(Date(2001, 1, 1), 55, O, 2, 33, 37, 53, 4, 11, 1.6),
+                Donor(Date(2001, 1, 2), 55, O, 2, 33, 37, 53, 4, 11, 1.2),
+                Donor(Date(2001, 1, 3), 55, O, 2, 33, 37, 53, 4, 11, 1.2)
+            ]
+
+            # First donor not accepted, early stop when recipient 2 accept the offer
+            @test allocate(donors, recipients, dm, until=2) == [0, 2, 0]
+
+        end
 
     end
 
