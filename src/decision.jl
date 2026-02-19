@@ -147,8 +147,9 @@ Return the indices of recipients eligible to receive an offer from `donor`.
 
 A recipient is considered eligible if it:
 - is currently unallocated,
-- is active at the donor arrival date, and
-- is ABO-compatible with the donor.
+- is active at the donor arrival date,
+- is ABO-compatible with the donor, and
+- is CPRA is lower a random value.
 
 # Arguments
 - `donor::Donor`: Donor being allocated.
@@ -162,7 +163,7 @@ A recipient is considered eligible if it:
 function get_eligible_recipient_indices(
     donor::Donor,
     recipients::Vector{Recipient},
-    is_unallocated::BitVector = trues(length(recipients)),
+    is_unallocated::AbstractVector{<:Bool} = trues(length(recipients)),
 )
 
     arrival = donor.arrival
@@ -170,6 +171,7 @@ function get_eligible_recipient_indices(
     eligible_mask = copy(is_unallocated)
     eligible_mask .&= is_active.(recipients, arrival)
     eligible_mask .&= is_abo_compatible.(donor, recipients)
+    eligible_mask .&= sim_cpra_compatibility.(recipients)
 
     return findall(eligible_mask)
 end

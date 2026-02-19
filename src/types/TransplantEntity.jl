@@ -401,6 +401,18 @@ function is_abo_compatible(donor::Donor, recipient::Recipient)
     return is_abo_compatible(donor.blood, recipient.blood)
 end
 
+"""
+    sim_cpra_compatibility(recipient) -> Bool
+
+Return `true` if the recipient is compatible with a donor, based on CPRA.
+
+Compatibility is simulated as a Bernoulli trial with probability
+`1 - recipient.cpra/100`.
+"""
+function sim_cpra_compatibility(recipient::Recipient)
+    return rand() ≥ recipient.cpra / 100
+end
+
 
 """
     get_HLA_A(t::TransplantEntity) -> Tuple
