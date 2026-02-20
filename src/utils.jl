@@ -106,20 +106,29 @@ function creatinine_mgdl(creat_umol_L::Real)
 end
 
 """
-    comes_before(v::Vector{Int}, a::Int, b::Int) -> Bool
+    auc(gt::AbstractVector{<:Bool}, scores::AbstractVector{<:Real})
 
-Return `true` if `a` appears before `b` in `v`, and `false` otherwise.
+Compute the area under the ROC curve based on ground thruth `gt` and scores `scores`.
 """
-function comes_before(v::AbstractVector{<:Int}, a::Int, b::Int)
-    @assert a ≠ b "`a` should be different than `b, got a = b = $a"
+function auc(gt::AbstractVector{<:Bool}, scores::AbstractVector{<:Real})
+    p = sortperm(scores)
+    ranks = similar(scores, Float64)
+    ranks[p] = 1:length(scores)
 
-    found_a = false
-    for x in v
-        if x == a
-            found_a = true
-        elseif x == b
-            return found_a
-        end
+    pos = findall(gt)
+    n_pos = length(pos)
+    n_neg = length(scores) - n_pos
+
+    return (sum(ranks[pos]) - n_pos*(n_pos+1)/2) / (n_pos*n_neg)
+end
+
+function brier_score(gt::AbstractVector{Bool}, p::AbstractVector{<:Real})
+    @assert length(gt) == length(p)
+    s = 0.0
+    for i in eachindex(gt)
+        y = gt[i] ? 1.0 : 0.0
+        d = p[i] - y
+        s += d*d
     end
-    return false
+    return s / length(gt)
 end

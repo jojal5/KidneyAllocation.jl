@@ -45,10 +45,14 @@ function retrieve_decision_data(donors_filepath::String, recipients_filepath::St
     filter!(row -> row.CAN_ID ∈ unique(df_recipients.CAN_ID), data)
 
     age = Int64[]
-    # waittime = Union{Float64,Missing}[]
     waittime = Float64[]
     blood = String[]
     n_mismatch = Int64[]
+    learning_set = String[]
+
+    don_id = unique(data.DON_ID)
+    n_train = round(Int64, length(don_id)*.8)
+    train_id = rand(MersenneTwister(12345), don_id, n_train)
 
     for r in eachrow(data)
 
@@ -56,11 +60,8 @@ function retrieve_decision_data(donors_filepath::String, recipients_filepath::St
 
         age_r = KidneyAllocation.years_between(Date(df_recipients.CAN_BTH_DT[ind]), Date(r.DON_DEATH_TM))
 
-        if ismissing(df_recipients.CAN_DIAL_DT[ind])
-            waittime_r = missing
-        else
-            waittime_r = KidneyAllocation.fractionalyears_between(Date(df_recipients.CAN_DIAL_DT[ind]), Date(r.DON_DEATH_TM))
-        end
+        waittime_r = KidneyAllocation.fractionalyears_between(Date(df_recipients.CAN_DIAL_DT[ind]), Date(r.DON_DEATH_TM))
+
         blood_r = df_recipients.CAN_BLOOD[ind]
 
         n = 0;
@@ -73,6 +74,12 @@ function retrieve_decision_data(donors_filepath::String, recipients_filepath::St
         push!(blood, blood_r)
         push!(n_mismatch, n)
 
+        if r.DON_ID ∈ train_id
+            push!(learning_set, "train")
+        else
+            push!(learning_set, "validation")
+        end
+
     end
 
     data.CAN_AGE = age
@@ -82,7 +89,9 @@ function retrieve_decision_data(donors_filepath::String, recipients_filepath::St
 
     data.DECISION = data.DECISION .== "Acceptation"
 
-    select!(data, [:DON_AGE, :KDRI, :CAN_AGE, :CAN_WAIT, :CAN_BLOOD, :MISMATCH, :DECISION])
+    data.LEARNING_SET = learning_set
+
+    select!(data, [:DON_AGE, :KDRI, :CAN_AGE, :CAN_WAIT, :CAN_BLOOD, :MISMATCH, :DECISION, :LEARNING_SET])
 
     return data
 
