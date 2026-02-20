@@ -140,7 +140,12 @@
 
         end
 
-        @testset "allocation until a specific recipient accept an offer" begin
+    end
+
+    @testset "allocation_until_transplant" begin
+
+        import KidneyAllocation.allocate_until_transplant
+        @load "data/tree_decision_model.jld2"
 
             recipients = [
                 Recipient(Date(1981, 1, 1), Date(1997, 1, 1), Date(2000, 6, 1), O, 69, 2403, 7, 35, 4, 103, 0),
@@ -154,9 +159,7 @@
             ]
 
             # First donor not accepted, early stop when recipient 2 accept the offer
-            @test allocate(donors, recipients, dm, until=2) == [0, 2, 0]
-
-        end
+            @test allocate_until_transplant(donors, recipients, dm, 2) == 2
 
     end
 

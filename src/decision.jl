@@ -214,8 +214,14 @@ end
 
 
 
-# C'est important pour cette fonction qu'on envoie les patients en attente, pas tous les patients de la banque.
-function allocate(donors::Vector{Donor}, recipients::Vector{Recipient}, dm::AbstractDecisionModel; until::Int64=-9999)
+"""
+    allocate(donors, recipients, dm) -> Vector{Int}
+
+Allocate each donor in `donors` to at most one recipient in `recipients` using `dm`.
+
+Returns a vector of allocated recipient indices (0 if unallocated).
+"""
+function allocate(donors::Vector{Donor}, recipients::Vector{Recipient}, dm::AbstractDecisionModel)
 
     is_unallocated = trues(length(recipients))                 
     allocated_recipient_index = zeros(Int64,length(donors))
@@ -229,21 +235,50 @@ function allocate(donors::Vector{Donor}, recipients::Vector{Recipient}, dm::Abst
         if allocated_recipient_index[donor_idx] != 0
             is_unallocated[allocated_recipient_index[donor_idx]] = false
         end
-
-        if allocated_recipient_index[donor_idx] == until
-            break
-        end
-
     end
 
     return allocated_recipient_index
 end
 
 """
+    allocate_until_transplant(donors, recipients, dm, ind) -> Int
+
+Allocate donors sequentially using `dm` until recipient `ind` is allocated.
+Return the donor index, or `0` if no transplant occurs.
+"""
+function allocate_until_transplant(
+    donors::Vector{Donor},
+    recipients::Vector{Recipient},
+    dm::AbstractDecisionModel,
+    ind::Int,
+)
+
+    @assert 1 ≤ ind ≤ length(recipients) "Recipient index should be in 1 ≤ ind ≤ $(length(recipients)), got ind = $ind."
+    
+    is_unallocated = trues(length(recipients))
+
+    for donor_idx in eachindex(donors)
+        donor = donors[donor_idx]
+
+        allocated_recipient_index = allocate_one_donor(donor, recipients, dm, is_unallocated)
+
+        if allocated_recipient_index == ind
+            return donor_idx
+        end
+
+        if allocated_recipient_index != 0
+            is_unallocated[allocated_recipient_index] = false
+        end
+    end
+
+    return 0
+end
+
+
+"""
     allocate_until_next_offer(donors, recipients, dm, ind) -> Int
 
-Return the index of the first donor for which recipient `ind` would receive an
-offer under the ranked allocation process, or `0` if none occurs.
+Return the index of the first donor for which recipient `ind` would receive an offer, or `0` if none occurs.
 """
 function allocate_until_next_offer(
     donors::Vector{Donor},
@@ -251,6 +286,9 @@ function allocate_until_next_offer(
     dm::AbstractDecisionModel,
     ind::Int,
 )
+
+    @assert 1 ≤ ind ≤ length(recipients) "Recipient index should be in 1 ≤ ind ≤ $(length(recipients)), got ind = $ind."
+
     is_unallocated = trues(length(recipients))
 
     for donor_idx in eachindex(donors)
