@@ -160,5 +160,38 @@
 
     end
 
+    @testset "allocate_until_next_offer" begin
+
+        import KidneyAllocation.allocate_until_next_offer
+        @load "data/tree_decision_model.jld2"
+
+        recipients = [
+            Recipient(Date(1981, 1, 1), Date(1997, 1, 1), Date(2000, 6, 1), O, 69, 2403, 7, 35, 4, 103, 0),
+            Recipient(Date(1969, 1, 1), Date(1995, 1, 1), Date(1996, 1, 1), O, 68, 203, 39, 77, 15, 17, 0),
+            Recipient(Date(1969, 1, 1), Date(1995, 1, 1), Date(1996, 1, 1), A, 68, 203, 39, 77, 15, 17, 0),
+            Recipient(Date(1979, 1, 1), Date(1996, 1, 1), Date(1997, 1, 1), AB, 68, 203, 39, 77, 15, 17, 0),
+        ]
+
+        donors = [
+            Donor(Date(2001, 1, 1), 55, O, 2, 33, 37, 53, 4, 11, 1.6),
+            Donor(Date(2001, 1, 2), 55, O, 2, 33, 37, 53, 4, 11, 1.2),
+            Donor(Date(2001, 1, 3), 55, O, 2, 33, 37, 53, 4, 11, 1.2),
+            Donor(Date(2001, 1, 4), 55, AB, 2, 33, 37, 53, 4, 11, 1.2),
+        ]
+
+        # Recipient 1 refuses the firts offer
+        @test allocate_until_next_offer(donors, recipients, dm, 1) == 1
+
+        # Recipient 2 refuses the first offer
+        @test allocate_until_next_offer(donors, recipients, dm, 2) == 1
+
+        # Recipient 3 has not been offered a donor
+        @test allocate_until_next_offer(donors, recipients, dm, 3) == 0
+
+        # Recipient 4 has been offered donor 4
+        @test allocate_until_next_offer(donors, recipients, dm, 4) == 4
+
+    end
+
 
 end

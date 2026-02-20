@@ -89,32 +89,12 @@ function retrieve_decision_data(donors_filepath::String, recipients_filepath::St
 end
 
 
+"""
+    allocate_one_donor(donor, recipients, dm, is_unallocated) -> Int
 
-# function get_decision(donor::Donor, recipient::Recipient, fm::StatsModels.TableRegressionModel, u::Real)
-
-#     if is_abo_compatible(get_bloodtype(donor), get_bloodtype(recipient))
-
-#         arrival = get_arrival(donor)
-#         DON_AGE = donor.age
-#         KDRI = donor.kdri
-
-#         CAN_AGE = years_between(recipient.birth, arrival)
-#         CAN_WAIT = fractionalyears_between(recipient.dialysis, arrival)
-#         CAN_BLOOD = string(get_bloodtype(recipient))
-
-#         df = DataFrame(DON_AGE=DON_AGE, KDRI=KDRI, CAN_AGE=CAN_AGE, CAN_WAIT=CAN_WAIT, CAN_BLOOD=CAN_BLOOD)
-
-#         θ̂ = predict(fm, df)[]
-
-#         decision = θ̂ > u 
-#     else
-#         decision = false
-#     end
-
-# end
-
-
-
+Return the index of the first recipient who accepts the donor offer among
+eligible and ranked candidates, or `0` if none accept.
+"""
 function allocate_one_donor(
     donor::Donor,
     recipients::Vector{Recipient},
@@ -128,16 +108,22 @@ function allocate_one_donor(
 
 end
 
+"""
+    allocate_one_donor(donor, recipients, dm, ranked_indices) -> Int
+
+Return the index of the first accepting recipient in `ranked_indices`,
+or `0` if none accept.
+"""
 function allocate_one_donor(
     donor::Donor,
     recipients::Vector{Recipient},
     dm::AbstractDecisionModel,
     ranked_indices::AbstractVector{<:Int}
 )
-    acceptation = decide(dm, recipients[ranked_indices], donor)
+    accepted = decide(dm, recipients[ranked_indices], donor)
 
-    if any(acceptation)
-        ind = findfirst(acceptation)
+    if any(accepted)
+        ind = findfirst(accepted)
         return ranked_indices[ind]
     else
         return 0
@@ -145,6 +131,12 @@ function allocate_one_donor(
 
 end
 
+"""
+    allocate_one_donor(donor, recipients, dm, ranked_indices::Int) -> Int
+
+Return `ranked_indices` if the corresponding recipient accepts the offer,
+or `0` otherwise.
+"""
 function allocate_one_donor(
     donor::Donor,
     recipients::Vector{Recipient},
@@ -245,4 +237,48 @@ function allocate(donors::Vector{Donor}, recipients::Vector{Recipient}, dm::Abst
     end
 
     return allocated_recipient_index
+end
+
+"""
+    allocate_until_next_offer(donors, recipients, dm, ind) -> Int
+
+Return the index of the first donor for which recipient `ind` would receive an
+offer under the ranked allocation process, or `0` if none occurs.
+"""
+function allocate_until_next_offer(
+    donors::Vector{Donor},
+    recipients::Vector{Recipient},
+    dm::AbstractDecisionModel,
+    ind::Int,
+)
+    is_unallocated = trues(length(recipients))
+
+    for donor_idx in eachindex(donors)
+        donor = donors[donor_idx]
+
+        eligible_indices = get_eligible_recipient_indices(donor, recipients, is_unallocated)
+        ranked_indices = rank_eligible_indices_by_score(donor, recipients, eligible_indices)
+
+        allocated_recipient_index = allocate_one_donor(donor, recipients, dm, ranked_indices)
+
+        # check whether ind would be offered before acceptance (or no acceptance)
+        pos_ind = findfirst(==(ind), ranked_indices)
+        if pos_ind !== nothing
+            if allocated_recipient_index == 0
+                return donor_idx
+            else
+                pos_alloc = findfirst(==(allocated_recipient_index), ranked_indices)
+                if pos_alloc !== nothing && pos_ind ≤ pos_alloc
+                    return donor_idx
+                end
+            end
+        end
+
+        # update availability after allocation
+        if allocated_recipient_index != 0
+            is_unallocated[allocated_recipient_index] = false
+        end
+    end
+
+    return 0
 end

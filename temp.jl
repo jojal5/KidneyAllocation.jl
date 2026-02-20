@@ -5,69 +5,84 @@ using Dates, JLD2, Random, Test
 
 using KidneyAllocation
 
+import KidneyAllocation: get_eligible_recipient_indices, rank_eligible_indices_by_score, allocate_one_donor
 
-function allocate_until_next_offer(donors::Vector{Donor}, recipients::Vector{Recipient}, dm::AbstractDecisionModel, ind::Int)
-    
-    is_unallocated = trues(length(recipients))                 
-    
+"""
+    allocate_until_next_offer(donors, recipients, dm, ind) -> Int
+
+Return the index of the first donor for which recipient `ind` would receive an
+offer under the ranked allocation process, or `0` if none occurs.
+"""
+function allocate_until_next_offer(
+    donors::Vector{Donor},
+    recipients::Vector{Recipient},
+    dm::AbstractDecisionModel,
+    ind::Int,
+)
+    is_unallocated = trues(length(recipients))
+
     for donor_idx in eachindex(donors)
-
         donor = donors[donor_idx]
 
         eligible_indices = get_eligible_recipient_indices(donor, recipients, is_unallocated)
         ranked_indices = rank_eligible_indices_by_score(donor, recipients, eligible_indices)
 
-        allocated_recipient_index[donor_idx] = allocate_one_donor(donor, recipients, dm, ranked_indices)
+        allocated_recipient_index = allocate_one_donor(donor, recipients, dm, ranked_indices)
 
-        if ind ∈ ranked_indices end
-
-
-        if allocated_recipient_index[donor_idx] != 0
-            is_unallocated[allocated_recipient_index[donor_idx]] = false
+        # check whether ind would be offered before acceptance (or no acceptance)
+        pos_ind = findfirst(==(ind), ranked_indices)
+        if pos_ind !== nothing
+            if allocated_recipient_index == 0
+                return donor_idx
+            else
+                pos_alloc = findfirst(==(allocated_recipient_index), ranked_indices)
+                if pos_alloc !== nothing && pos_ind ≤ pos_alloc
+                    return donor_idx
+                end
+            end
         end
 
-        if allocated_recipient_index[donor_idx] == until
-            break
+        # update availability after allocation
+        if allocated_recipient_index != 0
+            is_unallocated[allocated_recipient_index] = false
         end
-
     end
 
-    return allocated_recipient_index
+    return 0
 end
 
 
+import KidneyAllocation: allocate_one_donor, allocate
 
+@testset "allocate_until_next_offer" begin
 
-"""
-    comes_before(v::Vector{Int}, a::Int, b::Int) -> Bool
+    @import KidneyAllocation.allocate_until_next_offer
+    @load "data/tree_decision_model.jld2"
 
-Return `true` if `a` appears before `b` in `v`, and `false` otherwise.
-"""
-function comes_before(v::AbstractVector{<:Int}, a::Int, b::Int)
-    @assert a ≠ b "`a` should be different than `b, got a = b = $a"
+    recipients = [
+        Recipient(Date(1981, 1, 1), Date(1997, 1, 1), Date(2000, 6, 1), O, 69, 2403, 7, 35, 4, 103, 0),
+        Recipient(Date(1969, 1, 1), Date(1995, 1, 1), Date(1996, 1, 1), O, 68, 203, 39, 77, 15, 17, 0),
+        Recipient(Date(1969, 1, 1), Date(1995, 1, 1), Date(1996, 1, 1), A, 68, 203, 39, 77, 15, 17, 0),
+        Recipient(Date(1979, 1, 1), Date(1996, 1, 1), Date(1997, 1, 1), AB, 68, 203, 39, 77, 15, 17, 0),
+    ]
 
-    found_a = false
-    for x in v
-        if x == a
-            found_a = true
-        elseif x == b
-            return found_a
-        end
-    end
-    return false
-end
+    donors = [
+        Donor(Date(2001, 1, 1), 55, O, 2, 33, 37, 53, 4, 11, 1.6),
+        Donor(Date(2001, 1, 2), 55, O, 2, 33, 37, 53, 4, 11, 1.2),
+        Donor(Date(2001, 1, 3), 55, O, 2, 33, 37, 53, 4, 11, 1.2),
+        Donor(Date(2001, 1, 4), 55, AB, 2, 33, 37, 53, 4, 11, 1.2),
+    ]
 
-using Test
+    # Recipient 1 refuses the firts offer
+    @test allocate_until_next_offer(donors, recipients, dm, 1) == 1
 
-@testset "comes_before" begin
-    import KidneyAllocation.comes_before
+    # Recipient 2 refuses the first offer
+    @test allocate_until_next_offer(donors, recipients, dm, 2) == 1
 
-    v = [1, 2, 3, 4, 5]
+    # Recipient 3 has not been offered a donor
+    @test allocate_until_next_offer(donors, recipients, dm, 3) == 0
 
-    @test_throws AssertionError comes_before(v, 4, 4)
-    @test comes_before(v, 2, 4) == true
-    @test comes_before(v, 4, 2) == false
-    @test comes_before(v, -2, 4) == false
-    @test comes_before(v, 2, 0) == false
+    # Recipient 4 has been offered donor 4
+    @test allocate_until_next_offer(donors, recipients, dm, 4) == 4
 
 end
