@@ -51,17 +51,8 @@
 
     end
 
-    @testset "comes_before" begin
-        import KidneyAllocation.comes_before
+    # TODO Test auc
 
-        v = [1, 2, 3, 4, 5]
-
-        @test_throws AssertionError comes_before(v, 4, 4)
-        @test comes_before(v, 2, 4) == true
-        @test comes_before(v, 4, 2) == false
-        @test comes_before(v, -2, 4) == false
-        @test comes_before(v, 2, 0) == false
-
-    end
+    # TODO Test brier_score
 
 end

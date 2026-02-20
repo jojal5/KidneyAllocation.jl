@@ -3,11 +3,12 @@ module KidneyAllocation
     using CSV, DataFrames, Dates, DecisionTree, Distributions, GLM, Random
     using StatsModels # Needed when passing a glm fitted model as a function argument
 
-    include("types/ABOGroup.jl")
-    include("types/TransplantEntity.jl")
-    include("types/DecisionModel.jl")
+    include("Types/ABOGroup.jl")
+    include("Types/TransplantEntity.jl")
+    include("Types/DecisionModel.jl")
     include("AllocationScore/allocationscore.jl")
     include("Quality/quality.jl")
+    include("allocation.jl")
     include("decision.jl")
     include("preprocess.jl")
     include("simulation.jl")
