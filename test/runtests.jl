@@ -5,7 +5,7 @@ using CSV, DataFrames, Dates, JLD2, Random
 
 @testset "KidneyAllocation.jl" begin
     include("test_types.jl")
-    include("test_decision.jl")
+    include("test_allocation.jl")
     include("test_utils.jl")
     include("test_preprocess.jl")
     include("test_simulation.jl")

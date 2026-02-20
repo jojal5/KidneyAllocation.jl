@@ -1,4 +1,4 @@
-@testset "decision.jl" begin
+@testset "allocation.jl" begin
 
     @testset "get_eligible_recipient_indice" begin
 

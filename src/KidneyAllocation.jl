@@ -8,6 +8,7 @@ module KidneyAllocation
     include("Types/DecisionModel.jl")
     include("AllocationScore/allocationscore.jl")
     include("Quality/quality.jl")
+    include("allocation.jl")
     include("decision.jl")
     include("preprocess.jl")
     include("simulation.jl")
