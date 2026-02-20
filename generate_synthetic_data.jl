@@ -1,8 +1,8 @@
 # In terminal, run the following command
 # julia --project=. --threads=8 generate_synthetic_data.jl
 
-# using Pkg
-# Pkg.activate(".")
+using Pkg
+Pkg.activate(".")
 
 using Dates, CSV, DataFrames, Distributions, GLM, JLD2, Random
 

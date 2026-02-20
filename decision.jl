@@ -3,7 +3,7 @@ Pkg.activate(".")
 
 using KidneyAllocation
 
-using Dates, DataFrames, DecisionTree, GLM
+using Dates, DataFrames, DecisionTree, GLM, JLD2
 
 import KidneyAllocation: retrieve_decision_data, fit_threshold_f1, fit_threshold_prevalence, auc, brier_score
 
@@ -84,3 +84,42 @@ p = DecisionTree.predict_proba(m, X)[:, 2]
 auc(gt, p)
 brier_score(gt, p)
 
+## Refit the GLM model on all the data and save it for later use
+
+model = @formula(DECISION ~ log(KDRI) + CAN_AGE * KDRI * CAN_WAIT + CAN_AGE^2 * KDRI * CAN_WAIT^2 + CAN_BLOOD + DON_AGE)
+fm = glm(model, data, Bernoulli(), LogitLink())
+
+u = fit_threshold_prevalence(data.DECISION, GLM.predict(fm))
+
+dm = GLMDecisionModel(fm, u)
+
+jldsave("src/SyntheticData/GLMDecisionModel.jld2"; dm)
+
+## Refit the tree based model on all the data and save it for later use
+
+features = Symbol.([
+    "DON_AGE"
+    "KDRI"
+    "CAN_AGE"
+    "CAN_WAIT"
+    "MISMATCH"
+    "is_bloodtype_O"
+    "is_bloodtype_A"
+    "is_bloodtype_B"
+    "is_bloodtype_AB"])
+
+m = DecisionTreeClassifier(
+    max_depth=10, min_samples_leaf=125,
+    pruning_purity_threshold=1
+)
+
+X = KidneyAllocation.construct_feature_matrix_from_df(data, features)
+y = data.DECISION
+
+DecisionTree.fit!(m, X, y)
+
+u = fit_threshold_prevalence(data.DECISION, DecisionTree.predict_proba(m, X)[:,2])
+
+dm = TreeDecisionModel(m, features, u)
+
+jldsave("src/SyntheticData/TreeDecisionModel.jld2"; dm)
