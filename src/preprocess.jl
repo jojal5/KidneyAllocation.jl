@@ -3,7 +3,7 @@
 
 Parse an HLA-like value by extracting the leading numeric component.
 
-## Examples:
+### Examples:
 - `"24"`     → 24
 - `"24L"`    → 24
 - `"24Low"`  → 24
@@ -25,7 +25,7 @@ end
 
 Infer the expiration date for a single recipient from their longitudinal status history.
 
-## Details
+### Details
 The input `df` must correspond to a single recipient (`CAN_ID`) and contain
 at least the columns `:OUTCOME` and `:UPDATE_TM`.
 
@@ -60,13 +60,39 @@ function infer_recipient_expiration_date(df::AbstractDataFrame)::Union{Date,Noth
     end
 end
 
+"""
+    fill_hla_pair!(df, col1, col2)
+
+Replace `missing` values in `col1` (resp. `col2`) by the value in `col2`
+(resp. `col1`). Operates in place.
+"""
+function fill_hla_pair!(df::AbstractDataFrame, col1::Symbol, col2::Symbol)
+    df[!, col1] = coalesce.(df[!, col1], df[!, col2])
+    df[!, col2] = coalesce.(df[!, col2], df[!, col1])
+    return df
+end
+
+"""
+    fill_hla_pairs!(df, prefix)
+
+Fill missing HLA allele values (A, B, DR) from their paired column in place.
+"""
+function fill_hla_pairs!(df::AbstractDataFrame, prefix::AbstractString)
+    loci = ["A", "B", "DR"]
+    for locus in loci
+        col1 = Symbol("$(prefix)_$(locus)1")
+        col2 = Symbol("$(prefix)_$(locus)2")
+        fill_hla_pair!(df, col1, col2)
+    end
+    return df
+end
 
 """
     load_donor(filepath::String) -> DataFrame
 
 Load a CSV file containing donor information and return a cleaned `DataFrame`.
 
-## Details
+### Details
 Cleaning steps:
 - Remove donors for which the decision status (`DECISION`) is missing.
 - Keep only donors attributed to List 5 (Administrative to Transplant Québec).
@@ -96,19 +122,19 @@ end
 
 Construct a registry of `Donor` objects from a CSV file containing donor information.
 
-## Details
+### Details
 This function loads donor data using [`load_donor`](@ref) and applies the following steps:
 - Removes donors with missing information required for donor characterization and KDRI computation.
 - Computes the Kidney Donor Risk Index (KDRI) for each donor.
 - Constructs a `Donor` object for each valid donor record.
 
-## Notes
+### Notes
 - The donor arrival date is derived from the donor death date (`DON_DEATH_TM`).
 - Binary clinical indicators (hypertension, diabetes, DCD) are inferred from coded values.
 - Rows with incomplete data required for KDRI computation are discarded.
 - Keep only accepted offers (i.e., `DECISION == "Acceptation"`).
 
-## Returns
+### Returns
 A vector of `Donor` objects representing the donor registry.
 """
 function build_donor_registry(filepath::String)
@@ -116,11 +142,7 @@ function build_donor_registry(filepath::String)
     df = load_donor(filepath)
 
     # Only consideing accepted offers to avois duplication
-    filter!(row -> row.DECISION == "Acceptation", df)
-
-    # Si on a une taille et un poids manquant, on remplace par les valeurs moyennes
-    # df.WEIGHT[df.WEIGHT.≈0.] .= 80.
-    # df.HEIGHT[df.HEIGHT.≈0.] .= 170.
+    filter!(row -> row.DON_ID == "Acceptation", df)
 
     dropmissing!(df)
 
@@ -135,7 +157,7 @@ function build_donor_registry(filepath::String)
         diabetes = r.DIABETES == 1
         cva = r.DEATH ∈ [4, 16]
         creatinine = creatinine_mgdl(r.CREATININE)
-        dcd = r.DCD == 1 
+        dcd = r.DCD == 1
 
         kdri = evaluate_kdri(age, height, weight, hypertension, diabetes, cva, creatinine, dcd)
 
@@ -192,14 +214,14 @@ function load_recipient(filepath::AbstractString)
 
     # If listing is before dialysis, set listing = dialysis
     df.CAN_LISTING_DT = ifelse.(df.CAN_LISTING_DT < df.CAN_DIAL_DT,
-                                df.CAN_DIAL_DT, df.CAN_LISTING_DT)
+        df.CAN_DIAL_DT, df.CAN_LISTING_DT)
 
     # Keeping only adult recipients
     filter!(row -> years_between(row.CAN_BTH_DT, row.CAN_LISTING_DT) > 17, df)
 
     df.CAN_LISTING_DT = Date.(df.CAN_LISTING_DT)
-    df.CAN_DIAL_DT    = Date.(df.CAN_DIAL_DT)
-    df.UPDATE_TM      = passmissing(Date).(df.UPDATE_TM)
+    df.CAN_DIAL_DT = Date.(df.CAN_DIAL_DT)
+    df.UPDATE_TM = passmissing(Date).(df.UPDATE_TM)
 
     return df
 end

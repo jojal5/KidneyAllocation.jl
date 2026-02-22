@@ -37,7 +37,7 @@ df2 = filter(row -> 2014 ≤ year(row.DON_DEATH_TM) < 2020, df)
 unique_don_id = unique(df2.DON_ID)
 λₒ = length(unique_don_id) / 6
 
-
+## Load decision model
 
 
 # Fit decision model (GLM based)
