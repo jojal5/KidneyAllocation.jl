@@ -1,37 +1,43 @@
 using Pkg
 Pkg.activate(".")
 
-using Dates, CSV, DataFrames, DecisionTree, Distributions, GLM, JLD2, Random
+using Dates, CSV, DataFrames, Distributions, JLD2, Random
 
 using KidneyAllocation
 
-import KidneyAllocation: build_recipient_registry, load_recipient, is_active, is_expired, is_abo_compatible
-import KidneyAllocation: load_donor, build_donor_registry
-import KidneyAllocation: shift_recipient_timeline, set_donor_arrival
-import KidneyAllocation: retrieve_decision_data, fit_threshold_f1, fit_threshold_prevalence
-import KidneyAllocation: score, years_between, fractionalyears_between, get_birth, get_dialysis, mismatch_count
-import KidneyAllocation: allocate_one_donor, allocate
+## Estimation recipient arrival rate
 
+import KidneyAllocation.load_recipient
 
 recipient_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Candidates.csv"
-cpra_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/CandidatesCPRA.csv"
+# cpra_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/CandidatesCPRA.csv"
+# recipients = build_recipient_registry(recipient_filepath, cpra_filepath)
 
-recipients = build_recipient_registry(recipient_filepath, cpra_filepath)
-
-# Estimate the recipient arrival rate
 df = load_recipient(recipient_filepath)
-df2 = filter(row -> 2014 ≤ year(row.CAN_LISTING_DT) < 2020, df)
-λᵣ = length(unique(df2.CAN_ID)) / 6
+
+df2 = filter(row -> year(row.CAN_LISTING_DT) < 2014, df)
+cand_before_2014 = unique(df2.CAN_ID)
+
+df2 = filter(row -> year(row.CAN_LISTING_DT) < 2020, df)
+cand_before_2020 = unique(df2.CAN_ID)
+
+new_recipients = setdiff(cand_before_2020, cand_before_2014)
+
+λᵣ = length(new_recipients)/6
+
+
+## Estimate the donor arrival rate
+
+import KidneyAllocation.load_donor
 
 donor_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Donors.csv"
 
-donors = build_donor_registry(donor_filepath)
-
-# Estimate the donor arrival rate
 df = load_donor(donor_filepath)
 df2 = filter(row -> 2014 ≤ year(row.DON_DEATH_TM) < 2020, df)
-filter!(row -> row.DECISION == "Acceptation", df2)
-λₒ = length(unique(df2.CAN_ID)) / 6
+unique_don_id = unique(df2.DON_ID)
+λₒ = length(unique_don_id) / 6
+
+
 
 
 # Fit decision model (GLM based)

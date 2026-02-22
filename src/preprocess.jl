@@ -135,7 +135,7 @@ function build_donor_registry(filepath::String)
         diabetes = r.DIABETES == 1
         cva = r.DEATH ∈ [4, 16]
         creatinine = creatinine_mgdl(r.CREATININE)
-        dcd = r.DCD == 1 # TODO À VÉRIFIER si c'est bien 1, sinon c'est 2 (Anastasiya a confirmé le code)
+        dcd = r.DCD == 1 
 
         kdri = evaluate_kdri(age, height, weight, hypertension, diabetes, cva, creatinine, dcd)
 

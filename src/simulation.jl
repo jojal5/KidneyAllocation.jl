@@ -1,10 +1,8 @@
 
 """
-    sample_arrival_dates(origin::Date, sim_end::Date, n::Integer) -> Vector{Date}
+    sample_arrival_dates(origin, sim_end, n) -> Vector{Date}
 
-Sample `n` arrival dates uniformly over [`origin`, `sim_end`].
-
-This is a small convenience wrapper around `KidneyAllocation.sample_days`.
+Sample `n` dates uniformly in [`origin`, `sim_end`].
 """
 sample_arrival_dates(origin::Date, sim_end::Date, n::Integer) =
     KidneyAllocation.sample_days(origin, sim_end, n)
@@ -12,25 +10,7 @@ sample_arrival_dates(origin::Date, sim_end::Date, n::Integer) =
 """
     generate_arrivals(indices, arrival_rate; origin, nyears, rng) -> (sampled_indices, arrival_dates)
 
-Generate synthetic arrivals by resampling registry indices and assigning
-random arrival dates over a simulation period.
-
-Arrivals are generated according to a Poisson process with mean
-`arrival_rate * nyears`, and arrival times are sampled uniformly over
-[`origin`, `origin + Year(nyears)`].
-
-# Arguments
-- `indices::AbstractVector{<:Int}`: Registry indices to resample from.
-- `arrival_rate::Real`: Mean annual arrival rate.
-
-# Keyword Arguments
-- `origin::Date`: Start of the simulation period.
-- `nyears::Int`: Length of the simulation horizon in years.
-- `rng::AbstractRNG`: Random number generator.
-
-# Returns
-- `sampled_indices::Vector{Int}`: Sampled registry indices.
-- `arrival_dates::Vector{Date}`: Corresponding arrival dates.
+Sample a Poisson number of arrivals and return resampled `indices` with uniformly sampled arrival dates over the simulation window.
 """
 function generate_arrivals(indices::AbstractVector{<:Int}, arrival_rate::Real;
     origin::Date = Date(2000, 1, 1),
@@ -49,28 +29,9 @@ function generate_arrivals(indices::AbstractVector{<:Int}, arrival_rate::Real;
 end
 
 """
-    reconstruct_recipients(
-        recipients::AbstractVector{Recipient},
-        indices::AbstractVector{<:Integer},
-        arrival_dates::AbstractVector{<:Date}
-    ) -> Vector{Recipient}
+    reconstruct_recipients(recipients, indices, arrival_dates) -> Vector{Recipient}
 
-Reconstruct a vector of recipients from registry indices and arrival dates.
-
-Each output recipient is created by taking `recipients[indices[i]]` from the
-registry and shifting its timeline to `arrival_dates[i]` using
-`shift_recipient_timeline`.
-
-# Arguments
-- `recipients`: Registry of recipient profiles.
-- `indices`: Indices into `recipients` (1-based).
-- `arrival_dates`: Arrival dates aligned with `indices`.
-
-# Returns
-- `Vector{Recipient}`: Reconstructed recipients with updated timelines.
-
-# Errors
-Throws `ArgumentError` if `indices` and `arrival_dates` do not have the same length.
+Return `recipients[indices[i]]` with timelines shifted to `arrival_dates[i]`.
 """
 function reconstruct_recipients(
     recipients::AbstractVector{Recipient},
@@ -92,27 +53,9 @@ function reconstruct_recipients(
 end
 
 """
-    reconstruct_donors(
-        donors::AbstractVector{Donor},
-        indices::AbstractVector{<:Integer},
-        arrival_dates::AbstractVector{<:Date}
-    ) -> Vector{Donor}
+    reconstruct_donors(donors, indices, arrival_dates) -> Vector{Donor}
 
-Reconstruct a vector of donors from registry indices and arrival dates.
-
-Each output donor is created by taking `donors[indices[i]]` from the registry
-and setting its arrival time to `arrival_dates[i]` using `set_donor_arrival`.
-
-# Arguments
-- `donors`: Registry of donor profiles.
-- `indices`: Indices into `donors` (1-based).
-- `arrival_dates`: Arrival dates aligned with `indices`.
-
-# Returns
-- `Vector{Donor}`: Reconstructed donors with updated arrival times.
-
-# Errors
-Throws `ArgumentError` if `indices` and `arrival_dates` do not have the same length.
+Return `donors[indices[i]]` with arrival set to `arrival_dates[i]`.
 """
 function reconstruct_donors(
     donors::AbstractVector{Donor},
@@ -134,50 +77,25 @@ function reconstruct_donors(
 end
 
 """
-    simulate_initial_state_indexed(
-        recipients,
-        donors,
-        fm,
-        u;
-        start_date,
-        nyears,
-        donor_rate,
-        recipient_rate,
-        origin_date,
-        rng
+    simulate_initial_state_indexed(donors, recipients, dm; 
+        start_date, nyears, donor_rate, recipient_rate, origin_date, rng
     ) -> (final_indices, shifted_arrival_dates)
 
-Simulate the evolution of a transplant waiting list and return the final
-waiting recipients in indexed form.
-
-The function simulates recipient and donor arrivals, applies the allocation
-policy, removes transplanted recipients, and returns the indices and shifted
-arrival dates of recipients remaining active at the end of the simulation
-period.
-
-# Arguments
-- `recipients::Vector{Recipient}`: Registry of recipient profiles.
-- `donors::Vector{Donor}`: Registry of donor profiles.
-- `fm`: Fitted model used for allocation decisions.
-- `u`: Decision parameter.
+Simulate arrivals and allocations over the time horizon and return the registry
+indices and shifted arrival dates of recipients still active at the end.
 
 # Keyword Arguments
 - `start_date::Date`: Start of the simulation window.
-- `nyears::Int`: Length of the simulation horizon.
-- `donor_rate::Real`: Mean donor arrival rate.
-- `recipient_rate::Real`: Mean recipient arrival rate.
-- `origin_date::Date`: Reference date for timeline shifting.
+- `nyears::Int`: Length of the simulation horizon in years.
+- `donor_rate::Real`: Mean annual donor arrival rate.
+- `recipient_rate::Real`: Mean annual recipient arrival rate.
+- `origin_date::Date`: Reference date used to shift arrival times.
 - `rng::AbstractRNG`: Random number generator.
-
-# Returns
-- `final_indices::Vector{Int}`: Indices of recipients remaining on the waiting list.
-- `shifted_arrival_dates::Vector{Date}`: Corresponding shifted arrival dates.
 """
 function simulate_initial_state_indexed(
-    recipients::Vector{Recipient},
     donors::Vector{Donor},
-    dm::AbstractDecisionModel,
-    threshold::Real,
+    recipients::Vector{Recipient},
+    dm::AbstractDecisionModel;
     start_date::Date = Date(2014, 1, 1),
     nyears::Int = 10,
     donor_rate::Real = 242.0,
@@ -214,7 +132,7 @@ function simulate_initial_state_indexed(
         reconstruct_donors(donors, sampled_donor_indices, sampled_donor_arrival_dates)
 
     # Allocate donors (positions refer to waiting_recipients)
-    allocated_positions = allocate(waiting_recipients, arriving_donors, dm, threshold)
+    allocated_positions = allocate(arriving_donors, waiting_recipients, dm)
 
     # Filter non-attributed organ (i.e. ind ==0)
     filter!(>(0), allocated_positions)
@@ -223,8 +141,6 @@ function simulate_initial_state_indexed(
     # Remove transplanted recipients from the indexed representation
     deleteat!(waiting_registry_indices, allocated_positions)
     deleteat!(waiting_arrival_dates, allocated_positions)
-
-    # Keep `waiting_recipients` aligned for the next step
     deleteat!(waiting_recipients, allocated_positions)
 
     # Keep recipients active at end of simulation
