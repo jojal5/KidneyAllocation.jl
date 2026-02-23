@@ -257,6 +257,25 @@ function build_last_cpra_registry(cpra_filepath::String)
     return cpra_by_CAN_ID
 end
 
+"""
+    build_recipient_registry(recipient_filepath::String, cpra_filepath::String) -> Vector{Recipient}
+
+Build a registry of `Recipient` objects from recipient and CPRA CSV extracts.
+
+### Arguments
+- `recipient_filepath::String`: Path to the recipient CSV file (loaded by `load_recipient`).
+- `cpra_filepath::String`: Path to the CPRA CSV file used to compute the latest CPRA per `CAN_ID`.
+
+### Returns
+- `Vector{Recipient}`: One `Recipient` per unique `CAN_ID`.
+
+### Notes
+- The “most recent” recipient record is defined by the maximum `UPDATE_TM`.
+- HLA alleles are taken from the selected most recent record (`CAN_A1/A2`, `CAN_B1/B2`, `CAN_DR1/DR2`).
+- The expiration date is inferred from the status history and passed as
+  `expiration_date=...` when constructing the `Recipient`.
+- Rows with missing required fields are discarded before grouping.
+"""
 function build_recipient_registry(recipient_filepath::String, cpra_filepath::String)::Vector{Recipient}
     df = load_recipient(recipient_filepath)
 
@@ -271,9 +290,11 @@ function build_recipient_registry(recipient_filepath::String, cpra_filepath::Str
     # Compute most recent CPRA per CAN_ID
     cpra_by_CAN_ID = build_last_cpra_registry(cpra_filepath)
 
-    recipients = Recipient[]
+    G = groupby(df, :CAN_ID)
 
-    for g in groupby(df, :CAN_ID)
+    recipients = Vector{Recipient}(undef, length(G))
+
+    for (i , g) in enumerate(G)
         # Infer expiration date from the status history (helper sorts internally)
         exp_date = infer_recipient_expiration_date(g)
 
@@ -286,7 +307,7 @@ function build_recipient_registry(recipient_filepath::String, cpra_filepath::Str
         dialysis = g.CAN_DIAL_DT[1]
         arrival = g.CAN_LISTING_DT[1]
 
-        blood = KidneyAllocation.parse_abo(String(g.CAN_BLOOD[1]))
+        blood = parse_abo(String(g.CAN_BLOOD[1]))
 
         a1, a2 = g.CAN_A1[1], g.CAN_A2[1]
         b1, b2 = g.CAN_B1[1], g.CAN_B2[1]
@@ -294,10 +315,8 @@ function build_recipient_registry(recipient_filepath::String, cpra_filepath::Str
 
         cpra = get(cpra_by_CAN_ID, id, 0)
 
-        push!(recipients,
-            Recipient(birth, dialysis, arrival, blood,
-                a1, a2, b1, b2, dr1, dr2, cpra;
-                expiration_date=exp_date))
+        recipients[i] = Recipient(birth, dialysis, arrival, blood, a1, a2, b1, b2, dr1, dr2, cpra; expiration_date=exp_date)
+
     end
 
     return recipients
