@@ -98,7 +98,7 @@ function simulate_initial_state_indexed(
     dm::AbstractDecisionModel;
     start_date::Date = Date(2014, 1, 1),
     nyears::Int = 10,
-    donor_rate::Real = 242.0,
+    donor_rate::Real = 148.0,
     recipient_rate::Real = 272.83,
     origin_date::Date = Date(2000, 1, 1),
     rng::AbstractRNG = Random.default_rng(),
