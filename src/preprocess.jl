@@ -180,7 +180,7 @@ end
 
 Load the CSV file containing recipient information and return a cleaned `DataFrame`.
 
-## Details
+### Details
 
 Cleaning steps:
 - Replace the values `24L` and `24Low` with `24` in `CAN_A2`.
@@ -196,6 +196,8 @@ function load_recipient(filepath::AbstractString)
 
     # Replacing the value 24L and 24Low with 24 for instance
     df.CAN_A2 = parse_hla_int.(df.CAN_A2)
+
+    fill_hla_pairs!(df, "CAN")
 
     # Keeping only the recipients for kidney transplant
     filter!(row -> row.OUTCOME ∈ ("TX", "1", "0", "X", "Dcd", "Tx Vivant"), df)
@@ -225,13 +227,13 @@ end
 
 Build a dictionary mapping each recipient (`CAN_ID`) to their most recent calculated Panel Reactive Antibody (cPRA) value.
 
-## Details
+### Details
 - The CPRA file is read from `cpra_filepath`.
 - Rows with missing `CAN_ID` or `CAN_CPRA` are discarded.
 - If a patient has many CPRA values, the most recent is retained (by update time according to UPDATE_TM)
 - CPRA values are rounded to the nearest integer and returned as `Int64`.
 
-## Returns
+### Returns
 A dictionary mapping `CAN_ID` to the most recent CPRA value.
 """
 function build_last_cpra_registry(cpra_filepath::String)
