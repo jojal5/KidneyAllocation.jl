@@ -15,13 +15,13 @@ recipient_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-
 
 df = load_recipient(recipient_filepath)
 
-df2 = filter(row -> year(row.CAN_LISTING_DT) < 2014, df)
-cand_before_2014 = unique(df2.CAN_ID)
+df2 = filter(row -> year(row.CAN_LISTING_DT) < 2013, df)
+cand_before_2013 = unique(df2.CAN_ID)
 
 df2 = filter(row -> year(row.CAN_LISTING_DT) < 2020, df)
 cand_before_2020 = unique(df2.CAN_ID)
 
-new_recipients = setdiff(cand_before_2020, cand_before_2014)
+new_recipients = setdiff(cand_before_2020, cand_before_2013)
 
 λᵣ = length(new_recipients)/6
 
