@@ -119,7 +119,31 @@ function load_donor(filepath::String)
     return df
 end
 
+"""
+    donor_from_row(r::DataFrameRow) -> Donor
 
+Construct a `Donor` from a donor `DataFrameRow`. Assume non-missing value.
+"""
+function donor_from_row(r::DataFrameRow)
+
+    age = r.DON_AGE
+    height = r.HEIGHT
+    weight = r.WEIGHT
+    hypertension = r.HYPERTENSION == 1
+    diabetes = r.DIABETES == 1
+    cva = r.DEATH ∈ (4, 16)
+    creatinine = creatinine_mgdl(r.CREATININE)
+    dcd = r.DCD == 1
+
+    kdri = evaluate_kdri(age, height, weight, hypertension, diabetes, cva, creatinine, dcd)
+
+    arrival = Date(r.DON_DEATH_TM)
+    blood = parse_abo(r.DON_BLOOD)
+
+    donor = Donor(arrival, age, blood, r.DON_A1, r.DON_A2, r.DON_B1, r.DON_B2, r.DON_DR1, r.DON_DR2, kdri)
+
+    return donor
+end
 
 """
     build_donor_registry(filepath::String) -> Vector{Donor}
@@ -157,21 +181,8 @@ function build_donor_registry(filepath::String)
     for (i, g) in enumerate(G)
         r = first(g)
 
-        age = r.DON_AGE
-        height = r.HEIGHT
-        weight = r.WEIGHT
-        hypertension = r.HYPERTENSION == 1
-        diabetes = r.DIABETES == 1
-        cva = r.DEATH ∈ (4, 16)
-        creatinine = creatinine_mgdl(r.CREATININE)
-        dcd = r.DCD == 1
+        donors[i] = donor_from_row(r)
 
-        kdri = evaluate_kdri(age, height, weight, hypertension, diabetes, cva, creatinine, dcd)
-
-        arrival = Date(r.DON_DEATH_TM)
-        blood = parse_abo(r.DON_BLOOD)
-
-        donors[i] = Donor(arrival, age, blood, r.DON_A1, r.DON_A2, r.DON_B1, r.DON_B2, r.DON_DR1, r.DON_DR2, kdri)
     end
 
     return donors

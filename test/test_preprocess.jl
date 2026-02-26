@@ -40,6 +40,25 @@
 
     end
 
+    @testset "donor_from_row()" begin
+
+        import KidneyAllocation: donor_from_row, evaluate_kdri, parse_abo, creatinine_mgdl, get_HLA
+
+        df = DataFrame(DON_ID=1, DON_DEATH_TM=Date(2000, 1, 1), DON_AGE=60, DON_BLOOD="O", HEIGHT=1.8, WEIGHT=60., HYPERTENSION=1, DIABETES=0, DEATH=4, CREATININE=8., DCD=0,
+            DON_A1=3, DON_A2=3, DON_B1=7, DON_B2=8, DON_DR1=7, DON_DR2=8)
+
+        r = first(df)
+
+        d = donor_from_row(r)
+
+        @test d.arrival == Date(2000, 1, 1)
+        @test d.age == 60
+        @test d.blood == O
+        @test get_HLA(d) == (3, 3, 7, 8, 7, 8)
+        @test d.kdri ≈ 3.7152 atol = 1e-4
+
+    end
+
     @testset "recipient_from_row()" begin
 
         import KidneyAllocation.recipient_from_row

@@ -74,95 +74,9 @@ end
 
 
 
-"""
-    recipient_from_row(r, cpra=0, expiration_date=nothing) -> Recipient
-
-Construct a `Recipient` from a recipient `DataFrameRow`. Assume non-missing value.
-"""
-function recipient_from_row(r::DataFrameRow, cpra::Int=0, expiration_date::Union{Nothing,Date}=nothing)
-
-    birth = r.CAN_BTH_DT
-    dialysis = r.CAN_DIAL_DT
-    arrival = r.CAN_LISTING_DT
-
-    blood = parse_abo(String(r.CAN_BLOOD))
-
-    a1, a2 = r.CAN_A1, r.CAN_A2
-    b1, b2 = r.CAN_B1, r.CAN_B2
-    dr1, dr2 = r.CAN_DR1, r.CAN_DR2
-
-    recipient = Recipient(birth, dialysis, arrival, blood, a1, a2, b1, b2, dr1, dr2, cpra; expiration_date=expiration_date)
-
-    return recipient
-
-end
-
-@testset "recipient_from_row()" begin
-    
-    df = DataFrame(CAN_ID = 1, CAN_BTH_DT = Date(1970,1,1), CAN_DIAL_DT = Date(1999,1,1), CAN_LISTING_DT=Date(2000,1,1), CAN_BLOOD = "O",
-        CAN_A1 = 3, CAN_A2 = 3, CAN_B1 = 7, CAN_B2 = 8, CAN_DR1 = 7, CAN_DR2 = 8)
-
-    r = first(df)
-
-    r = recipient_from_row(r)
-
-    @test r.birth == Date(1970,1,1)
-    @test r.dialysis == Date(1999,1,1)
-    @test r.arrival == Date(2000,1,1)
-    @test r.blood == O
-    @test get_HLA(r) == (3, 3, 7, 8, 7, 8)
-    @test r.cpra == 0
-    @test isnothing(r.expiration_date)
-
-end
 
 
 
-"""
-    donor_from_row(r::DataFrameRow) -> Donor
-
-Construct a `Donor` from a donor `DataFrameRow`. Assume non-missing value.
-"""
-function donor_from_row(r::DataFrameRow)
-
-    age = r.DON_AGE
-    height = r.HEIGHT
-    weight = r.WEIGHT
-    hypertension = r.HYPERTENSION == 1
-    diabetes = r.DIABETES == 1
-    cva = r.DEATH ∈ (4, 16)
-    creatinine = creatinine_mgdl(r.CREATININE)
-    dcd = r.DCD == 1
-
-    kdri = evaluate_kdri(age, height, weight, hypertension, diabetes, cva, creatinine, dcd)
-
-    arrival = Date(r.DON_DEATH_TM)
-    blood = parse_abo(r.DON_BLOOD)
-
-    donor = Donor(arrival, age, blood, r.DON_A1, r.DON_A2, r.DON_B1, r.DON_B2, r.DON_DR1, r.DON_DR2, kdri)
-
-    return donor
-end
-
-
-@testset "donor_from_row()" begin
-    
-    import KidneyAllocation: evaluate_kdri, parse_abo, creatinine_mgdl, get_HLA
-
-    df = DataFrame(DON_ID = 1, DON_DEATH_TM = Date(2000,1,1), DON_AGE = 60, DON_BLOOD="O", HEIGHT = 1.8, WEIGHT = 60., HYPERTENSION=1, DIABETES =0, DEATH = 4, CREATININE =8., DCD = 0,
-        DON_A1 = 3, DON_A2 = 3, DON_B1 = 7, DON_B2 = 8, DON_DR1 = 7, DON_DR2 = 8)
-
-    r = first(df)
-
-    d = donor_from_row(r)
-
-    @test d.arrival == Date(2000,1,1)
-    @test d.age == 60
-    @test d.blood == O
-    @test get_HLA(d) == (3, 3, 7, 8, 7, 8)
-    @test d.kdri ≈ 3.7152 atol=1e-4
-
-end
 
 
 
