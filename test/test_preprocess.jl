@@ -40,6 +40,28 @@
 
     end
 
+    @testset "recipient_from_row()" begin
+
+        import KidneyAllocation.recipient_from_row
+
+        df = DataFrame(CAN_ID=1, CAN_BTH_DT=Date(1970, 1, 1), CAN_DIAL_DT=Date(1999, 1, 1), CAN_LISTING_DT=Date(2000, 1, 1), CAN_BLOOD="O",
+            CAN_A1=3, CAN_A2=3, CAN_B1=7, CAN_B2=8, CAN_DR1=7, CAN_DR2=8)
+
+        r = first(df)
+
+        r = recipient_from_row(r)
+
+        @test r.birth == Date(1970, 1, 1)
+        @test r.dialysis == Date(1999, 1, 1)
+        @test r.arrival == Date(2000, 1, 1)
+        @test r.blood == O
+        @test get_HLA(r) == (3, 3, 7, 8, 7, 8)
+        @test r.cpra == 0
+        @test isnothing(r.expiration_date)
+
+    end
+
+
     @testset "fill_hla_pairs" begin
 
         import KidneyAllocation.fill_hla_pairs!

@@ -119,6 +119,8 @@ function load_donor(filepath::String)
     return df
 end
 
+
+
 """
     build_donor_registry(filepath::String) -> Vector{Donor}
 
@@ -223,6 +225,29 @@ function load_recipient(filepath::AbstractString)
 end
 
 """
+    recipient_from_row(r, cpra=0, expiration_date=nothing) -> Recipient
+
+Construct a `Recipient` from a recipient `DataFrameRow`. Assume non-missing value.
+"""
+function recipient_from_row(r::DataFrameRow, cpra::Int=0, expiration_date::Union{Nothing,Date}=nothing)
+
+    birth = r.CAN_BTH_DT
+    dialysis = r.CAN_DIAL_DT
+    arrival = r.CAN_LISTING_DT
+
+    blood = parse_abo(String(r.CAN_BLOOD))
+
+    a1, a2 = r.CAN_A1, r.CAN_A2
+    b1, b2 = r.CAN_B1, r.CAN_B2
+    dr1, dr2 = r.CAN_DR1, r.CAN_DR2
+
+    recipient = Recipient(birth, dialysis, arrival, blood, a1, a2, b1, b2, dr1, dr2, cpra; expiration_date=expiration_date)
+
+    return recipient
+
+end
+
+"""
     build_last_cpra_registry(cpra_filepath::String) -> Dict{CAN_ID, Int64}
 
 Build a dictionary mapping each recipient (`CAN_ID`) to their most recent calculated Panel Reactive Antibody (cPRA) value.
@@ -298,24 +323,12 @@ function build_recipient_registry(recipient_filepath::String, cpra_filepath::Str
         # Infer expiration date from the status history (helper sorts internally)
         exp_date = infer_recipient_expiration_date(g)
 
-        # Sort once here for consistent "most recent" row selection
+        # Get last CPRA value
         sort!(g, :UPDATE_TM, rev=true)
-
         id = g.CAN_ID[1]
-
-        birth = g.CAN_BTH_DT[1]
-        dialysis = g.CAN_DIAL_DT[1]
-        arrival = g.CAN_LISTING_DT[1]
-
-        blood = parse_abo(String(g.CAN_BLOOD[1]))
-
-        a1, a2 = g.CAN_A1[1], g.CAN_A2[1]
-        b1, b2 = g.CAN_B1[1], g.CAN_B2[1]
-        dr1, dr2 = g.CAN_DR1[1], g.CAN_DR2[1]
-
         cpra = get(cpra_by_CAN_ID, id, 0)
 
-        recipients[i] = Recipient(birth, dialysis, arrival, blood, a1, a2, b1, b2, dr1, dr2, cpra; expiration_date=exp_date)
+        recipients[i] = recipient_from_row(first(g), cpra, exp_date)
 
     end
 
