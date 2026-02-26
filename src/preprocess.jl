@@ -61,13 +61,13 @@ function infer_recipient_expiration_date(df::AbstractDataFrame)::Union{Date,Noth
 end
 
 """
-    candidate_arrival_departure(df; future_date=Date(2100,1,1)) -> (arrival, departure)
+    recipient_arrival_departure(df; future_date=Date(2100,1,1)) -> (arrival, departure)
 
-Infer the arrival and departure dates of a single candidate from its status history.
-If the candidate is still active at the most recent update, `future_date` is used
+Infer the arrival and departure dates of a single recipient from its status history.
+If the recipient is still active at the most recent update, `future_date` is used
 as the departure date.
 """
-function candidate_arrival_departure(df::AbstractDataFrame, future_date::Date=Date(2100, 1, 1))
+function recipient_arrival_departure(df::AbstractDataFrame, future_date::Date=Date(2100, 1, 1))
 
     @assert "OUTCOME" in names(df) "Missing column :OUTCOME"
     @assert "UPDATE_TM" in names(df) "Missing column :UPDATE_TM"

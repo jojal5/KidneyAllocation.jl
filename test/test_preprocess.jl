@@ -97,5 +97,48 @@
         @test df.DON_DR2 == [7, 7, 7, 6]
     end
 
+    @testset "recipient_arrival_departure" begin
+
+        import KidneyAllocation.recipient_arrival_departure
+
+        @testset "recipient permanently removed" begin
+            df = DataFrame(CAN_ID=2311, CAN_LISTING_DT=Date(2009, 9, 17),
+                OUTCOME=["X", "0", "1", "1"], UPDATE_TM=[Date(2013, 1, 10), Date(2012, 8, 3), Date(2012, 2, 29), Date(2011, 2, 1)])
+
+            arrival, departure = recipient_arrival_departure(df)
+
+            @test arrival == Date(2009, 9, 17)
+            @test departure == Date(2013, 1, 10)
+        end
+
+
+        @testset "transplanted recipient" begin
+            df = DataFrame(CAN_ID=5695, CAN_LISTING_DT=Date(2017, 6, 19),
+                OUTCOME=["TX", "1"], UPDATE_TM=[Date(2017, 9, 14), Date(2017, 7, 14)])
+
+            arrival, departure = recipient_arrival_departure(df)
+
+            @test arrival == Date(2017, 6, 19)
+            @test departure == Date(2017, 9, 14)
+        end
+
+        @testset "still wainting recipient" begin
+            df = DataFrame(CAN_ID=18725, CAN_LISTING_DT=Date(2021, 6, 14),
+                OUTCOME=["1"], UPDATE_TM=[Date(2021, 9, 22)])
+
+            arrival, departure = recipient_arrival_departure(df)
+
+            @test arrival == Date(2021, 6, 14)
+            @test departure == Date(2100, 1, 1)
+        end
+
+        @testset "several recipients" begin
+            df = DataFrame(CAN_ID=[5695, 1000], CAN_LISTING_DT=Date(2017, 6, 19),
+                OUTCOME=["TX", "1"], UPDATE_TM=[Date(2017, 9, 14), Date(2017, 7, 14)])
+
+            @test_throws AssertionError recipient_arrival_departure(df)
+        end
+    end
+
 
 end

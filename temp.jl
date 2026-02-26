@@ -145,5 +145,10 @@ function simulate_initial_state_indexed(
     return final_recipient_indices, shifted_arrival_dates
 end
 
+import KidneyAllocation.recipient_arrival_departure
+
+G = groupby(df_recipient, :CAN_ID)
+
+G[3851]
 
 
