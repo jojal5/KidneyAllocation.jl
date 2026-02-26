@@ -51,37 +51,51 @@ active_recipients = Vector{Recipient}(undef, length(G))
 cpra_by_CAN_ID = build_last_cpra_registry(cpra_filepath)
 
 for (i, g) in enumerate(G)
+
     # Infer expiration date from the status history (helper sorts internally)
-        exp_date = infer_recipient_expiration_date(g)
+        expiration_date = infer_recipient_expiration_date(g)
+
+        # Most_recent CPRA
+        id = g.CAN_ID[1]
+        cpra = get(cpra_by_CAN_ID, id, 0)
 
         # Sort once here for consistent "most recent" row selection
         sort!(g, :UPDATE_TM, rev=true)
 
-        id = g.CAN_ID[1]
+        active_recipients[i] = recipient_from_row(first(g), cpra, expiration_date)
+        
+end
 
-        birth = g.CAN_BTH_DT[1]
-        dialysis = g.CAN_DIAL_DT[1]
-        arrival = g.CAN_LISTING_DT[1]
+waiting_registry_indices = Vector{Int64}(undef, length(active_recipients))
 
-        blood = parse_abo(String(g.CAN_BLOOD[1]))
-
-        a1, a2 = g.CAN_A1[1], g.CAN_A2[1]
-        b1, b2 = g.CAN_B1[1], g.CAN_B2[1]
-        dr1, dr2 = g.CAN_DR1[1], g.CAN_DR2[1]
-
-        cpra = get(cpra_by_CAN_ID, id, 0)
-
-        active_recipients[i] = Recipient(birth, dialysis, arrival, blood, a1, a2, b1, b2, dr1, dr2, cpra; expiration_date=exp_date)
+for i in eachindex(active_recipients)
+    waiting_registry_indices[i] = findfirst(recipients .== active_recipients[i])
 end
 
 
 
+"""
+    recipient_from_row(r, cpra=0, expiration_date=nothing) -> Recipient
 
+Construct a `Recipient` from a recipient `DataFrameRow`. Assume non-missing value.
+"""
+function recipient_from_row(r::DataFrameRow, cpra::Int=0, expiration_date::Union{Nothing, Date}=nothing)
 
+    birth = r.CAN_BTH_DT
+    dialysis = r.CAN_DIAL_DT
+    arrival = r.CAN_LISTING_DT
 
+    blood = parse_abo(String(r.CAN_BLOOD))
 
+    a1, a2 = r.CAN_A1, r.CAN_A2
+    b1, b2 = r.CAN_B1, r.CAN_B2
+    dr1, dr2 = r.CAN_DR1, r.CAN_DR2
 
-@time recipients[1] .== recipients
+    recipient = Recipient(birth, dialysis, arrival, blood, a1, a2, b1, b2, dr1, dr2, cpra; expiration_date=expiration_date)
+
+    return recipient
+
+end
 
 
 
