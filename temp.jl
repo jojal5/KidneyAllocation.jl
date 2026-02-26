@@ -33,7 +33,7 @@ can_id = Vector{Int64}(undef, length(G))
 
 for (i, g) in enumerate(G)
     can_id[i] = g.CAN_ID[1]
-    arrival[i], departure[i] = get_arrival_departure(g)
+    arrival[i], departure[i] = candidate_arrival_departure(g)
 end
 
 
@@ -145,25 +145,5 @@ function simulate_initial_state_indexed(
     return final_recipient_indices, shifted_arrival_dates
 end
 
-function get_arrival_departure(df::AbstractDataFrame, future_date::Date=Date(2024, 1, 1))
-
-    @assert "OUTCOME" in names(df) "Missing column :OUTCOME"
-    @assert "UPDATE_TM" in names(df) "Missing column :UPDATE_TM"
-
-    # Sort the dataframe lines so that the most recent is on top
-    idx = sortperm(df.UPDATE_TM; rev=true)
-    outcomes = uppercase.(String.(df.OUTCOME[idx]))
-    updates = df.UPDATE_TM[idx]
-
-    arrival = df.CAN_LISTING_DT[1]
-
-    if outcomes[1] == "1"
-        departure = future_date # Arbitrary date after the end of the historic period
-    else
-        departure = updates[1] # Si transplanté ou retiré
-    end
-
-    return arrival, departure
-end
 
 

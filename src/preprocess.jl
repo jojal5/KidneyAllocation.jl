@@ -61,6 +61,37 @@ function infer_recipient_expiration_date(df::AbstractDataFrame)::Union{Date,Noth
 end
 
 """
+    candidate_arrival_departure(df; future_date=Date(2100,1,1)) -> (arrival, departure)
+
+Infer the arrival and departure dates of a single candidate from its status history.
+If the candidate is still active at the most recent update, `future_date` is used
+as the departure date.
+"""
+function candidate_arrival_departure(df::AbstractDataFrame, future_date::Date=Date(2100, 1, 1))
+
+    @assert "OUTCOME" in names(df) "Missing column :OUTCOME"
+    @assert "UPDATE_TM" in names(df) "Missing column :UPDATE_TM"
+    @assert "CAN_LISTING_DT" in names(df) "Missing column :CAN_LISTING_DT"
+    @assert all(==(df.CAN_ID[1]), df.CAN_ID) "All rows must correspond to the same :CAN_ID"
+
+    # Sort the dataframe rows so that the most recent is on top
+    idx = sortperm(df.UPDATE_TM; rev=true)
+    outcomes = df.OUTCOME[idx]
+    updates = df.UPDATE_TM[idx]
+
+    arrival = df.CAN_LISTING_DT[1]
+
+    if outcomes[1] == "1"
+        departure = future_date # Arbitrary date after the end of the historic period
+    else
+        departure = updates[1] # Si transplanté ou retiré
+    end
+
+    return arrival, departure
+end
+
+
+"""
     fill_hla_pair!(df, col1, col2)
 
 Replace `missing` values in `col1` (resp. `col2`) by the value in `col2`
