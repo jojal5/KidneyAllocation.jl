@@ -5,7 +5,7 @@ using KidneyAllocation
 
 using Dates, DataFrames, DecisionTree, GLM, JLD2
 
-import KidneyAllocation: retrieve_decision_data, fit_threshold_f1, fit_threshold_prevalence, auc, brier_score
+import KidneyAllocation: build_decision_dataset, fit_threshold_f1, fit_threshold_prevalence, auc, brier_score
 
 
 ## Load data
@@ -13,14 +13,15 @@ import KidneyAllocation: retrieve_decision_data, fit_threshold_f1, fit_threshold
 recipients_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Candidates.csv"
 donors_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Donors.csv"
 
-data = retrieve_decision_data(donors_filepath, recipients_filepath)
+data = build_decision_dataset(donors_filepath, recipients_filepath)
 
 data_train = filter(row -> row.LEARNING_SET == "train", data)
 data_validation = filter(row -> row.LEARNING_SET == "validation", data)
 
 
 ## Fit decison model based on GLM on the train set
-model = @formula(DECISION ~ log(KDRI) + CAN_AGE * KDRI * CAN_WAIT + CAN_AGE^2 * KDRI * CAN_WAIT^2 + CAN_BLOOD + DON_AGE)
+# model = @formula(DECISION ~ log(KDRI) + CAN_AGE * KDRI * CAN_WAIT + CAN_AGE^2 * KDRI * CAN_WAIT^2 + CAN_BLOOD + DON_AGE)
+model = @formula(DECISION ~ log(KDRI) + CAN_BLOOD + CAN_WAIT + CAN_WAIT^2)
 
 fm = glm(model, data_train, Bernoulli(), LogitLink())
 
@@ -40,8 +41,6 @@ auc(gt, p)
 brier_score(gt, p)
 
 
-
-
 ## Fit decision model based on classification tree on the training set
 
 features = Symbol.([
@@ -56,7 +55,7 @@ features = Symbol.([
     "is_bloodtype_AB"])
 
 m = DecisionTreeClassifier(
-    max_depth=10, min_samples_leaf=125,
+    max_depth=15, min_samples_leaf=50,
     pruning_purity_threshold=1
 )
 
