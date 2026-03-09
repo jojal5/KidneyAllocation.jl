@@ -434,24 +434,47 @@ df_donors
 
 
 
+"""
+    kidneys_given_by_donor(df_donors) -> Dict{Int,Int}
 
-
-function number_of_given_kidney(df_donors::AbstractDataFrame)
+Return the number of given kidneys for each `DON_ID`.
+"""
+function kidneys_given_by_donor(df_donors::AbstractDataFrame)
+    @assert "DON_ID" in names(df_donors) "Missing column :DON_ID"
+    @assert "STATUS" in names(df_donors) "Missing column :STATUS"
 
     kidney_by_don_id = Dict{Int,Int}()
 
     for g in groupby(df_donors, :DON_ID)
-        kidney_by_don_id[g.DON_ID[1]] = count(g.DECISION .== "Acceptation")
+       kidney_by_don_id[g.DON_ID[1]] = count(==("TX"), skipmissing(g.STATUS))
     end
 
     return kidney_by_don_id
 
 end
 
-@time number_of_given_kidney(df_donors)
+@time kidneys_given_by_donor(df_donors)
 
+@testset "kidneys_given_by_donor()" begin
 
-filter(row->row.DON_ID ==1175, df_donors)
+    import KidneyAllocation.kidneys_given_by_donor
+
+    # Missing columns
+    df = DataFrame(STATUS = "TX")
+    @test_throws AssertionError kidneys_given_by_donor(df)
+    df = DataFrame(DON_ID = 1)
+    @test_throws AssertionError kidneys_given_by_donor(df)
+
+    df = DataFrame(DON_ID = 1, STATUS = [missing, missing, "TX", "TX"])
+    append!(df, DataFrame(DON_ID = 2, STATUS = [missing, "TX", missing]))
+    append!(df, DataFrame(DON_ID = 3, STATUS = [missing, missing, missing]))
+    d = kidneys_given_by_donor(df)
+    
+    @test d[1] == 2
+    @test d[2] == 1
+    @test d[3] == 0
+
+end
 
 
 

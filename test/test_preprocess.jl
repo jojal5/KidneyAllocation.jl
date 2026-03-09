@@ -180,5 +180,26 @@
 
     end
 
+    @testset "kidneys_given_by_donor()" begin
+
+        import KidneyAllocation.kidneys_given_by_donor
+
+        # Missing columns
+        df = DataFrame(STATUS="TX")
+        @test_throws AssertionError kidneys_given_by_donor(df)
+        df = DataFrame(DON_ID=1)
+        @test_throws AssertionError kidneys_given_by_donor(df)
+
+        df = DataFrame(DON_ID=1, STATUS=[missing, missing, "TX", "TX"])
+        append!(df, DataFrame(DON_ID=2, STATUS=[missing, "TX", missing]))
+        append!(df, DataFrame(DON_ID=3, STATUS=[missing, missing, missing]))
+        d = kidneys_given_by_donor(df)
+
+        @test d[1] == 2
+        @test d[2] == 1
+        @test d[3] == 0
+
+    end
+
 end
 

@@ -146,7 +146,7 @@ function load_donor(filepath::String)
     # Only attribution type 5
     filter!(row -> row.ATT_TYPE == 5, df)
 
-    cols_to_drop = [:DON_LAB_DT_TM, :ATT_TYPE, :STATUS]
+    cols_to_drop = [:DON_LAB_DT_TM, :ATT_TYPE]
     select!(df, Not(cols_to_drop))
 
     allowmissing!(df, [:WEIGHT, :HEIGHT])
@@ -224,6 +224,26 @@ function build_donor_registry(filepath::String)
 
     return donors
 end
+
+"""
+    kidneys_given_by_donor(df_donors) -> Dict{Int,Int}
+
+Return the number of given kidneys for each `DON_ID`.
+"""
+function kidneys_given_by_donor(df_donors::AbstractDataFrame)
+    @assert "DON_ID" in names(df_donors) "Missing column :DON_ID"
+    @assert "STATUS" in names(df_donors) "Missing column :STATUS"
+
+    kidney_by_don_id = Dict{Int,Int}()
+
+    for g in groupby(df_donors, :DON_ID)
+       kidney_by_don_id[g.DON_ID[1]] = count(==("TX"), skipmissing(g.STATUS))
+    end
+
+    return kidney_by_don_id
+
+end
+
 
 """
     load_recipient(filepath::AbstractString)
