@@ -153,5 +153,32 @@
         @test df.CAN_LISTING_DT[4] == Date(2003, 1, 1)
     end
 
+    @testset "harmonize_col!()" begin
+
+        import KidneyAllocation.harmonize_col!
+
+        df = DataFrame(CAN_ID=1, CAN_DIAL_DT=Date(2000, 1, 1), UPDATE_TM=[Date(2001, 1, 1), Date(2002, 1, 1), Date(2003, 1, 1)])
+        append!(df, DataFrame(CAN_ID=2, CAN_DIAL_DT=Date(2000, 1, 2), UPDATE_TM=[Date(2001, 1, 1), Date(2002, 1, 1), Date(2003, 1, 1)]))
+
+        harmonize_col!(df, col=:CAN_DIAL_DT)
+        G = groupby(df, :CAN_ID)
+        @test all(G[1].CAN_DIAL_DT .== Date(2000, 1, 1))
+        @test all(G[2].CAN_DIAL_DT .== Date(2000, 1, 2))
+
+        df = DataFrame(CAN_ID=1, CAN_DIAL_DT=[Date(2000, 1, 1), missing, missing], UPDATE_TM=[Date(2001, 1, 1), Date(2002, 1, 1), Date(2003, 1, 1)])
+        append!(df, DataFrame(CAN_ID=2, CAN_DIAL_DT=[missing, Date(2000, 1, 2), Date(2000, 1, 2)], UPDATE_TM=[Date(2001, 1, 1), Date(2002, 1, 1), Date(2003, 1, 1)]))
+
+        harmonize_col!(df, col=:CAN_DIAL_DT)
+        G = groupby(df, :CAN_ID)
+        @test all(G[1].CAN_DIAL_DT .== Date(2000, 1, 1))
+        @test all(G[2].CAN_DIAL_DT .== Date(2000, 1, 2))
+
+        df = DataFrame(CAN_ID=1, CAN_DIAL_DT=[Date(2000, 1, 1), Date(2100, 1, 1), missing], UPDATE_TM=[Date(2001, 1, 1), Date(2002, 1, 1), Date(2003, 1, 1)])
+        append!(df, DataFrame(CAN_ID=2, CAN_DIAL_DT=Date(2000, 1, 2), UPDATE_TM=[Date(2001, 1, 1), Date(2002, 1, 1), Date(2003, 1, 1)]))
+
+        @test_throws ArgumentError harmonize_col!(df, col=:CAN_DIAL_DT)
+
+    end
+
 end
 

@@ -135,6 +135,12 @@ function load_donor(filepath::String)
 
     fill_hla_pairs!(df, "DON")
 
+    col_to_harmonize = [:DON_AGE, :DON_BLOOD, :DON_DEATH_TM, :WEIGHT, :HEIGHT, :ETHNICITY, :HYPERTENSION, :DIABETES, :DEATH, :CREATININE, :HCV, :DCD]
+
+    for col in col_to_harmonize
+        harmonize_col!(df, col=col, idcol=:DON_ID)
+    end
+
     dropmissing!(df, [:DECISION])
 
     # Only attribution type 5
@@ -243,6 +249,12 @@ function load_recipient(filepath::AbstractString)
 
     fill_hla_pairs!(df, "CAN")
 
+    # Harmonize columns when some rows have missig value for a same recipient
+    col_to_harmonize = [:CAN_BTH_DT, :CAN_BLOOD, :CAN_DIAL_DT]
+    for col in col_to_harmonize
+        harmonize_col!(df, col=col, idcol=:CAN_ID )
+    end
+
     # Keeping only the recipients for kidney transplant
     filter!(row -> row.OUTCOME ∈ ("TX", "1", "0", "X", "Dcd", "Tx Vivant"), df)
 
@@ -252,12 +264,13 @@ function load_recipient(filepath::AbstractString)
     # If listing time is missing, replacing it by the dialysis time. If listing is before dialysis, set listing = dialysis
     enforce_listing_after_dialysis!(df)
 
-    # Keeping only adult recipients
-    filter!(row -> years_between(row.CAN_BTH_DT, row.CAN_LISTING_DT) > 17, df)
-
+    # Transform DateTime in Date
     df.CAN_LISTING_DT = Date.(df.CAN_LISTING_DT)
     df.CAN_DIAL_DT = Date.(df.CAN_DIAL_DT)
     df.UPDATE_TM = passmissing(Date).(df.UPDATE_TM)
+
+    # Keeping only adult recipients
+    filter!(row -> years_between(row.CAN_BTH_DT, row.CAN_LISTING_DT) > 17, df)
 
     return df
 end
@@ -402,5 +415,32 @@ function enforce_listing_after_dialysis!(df::AbstractDataFrame)
         end
     end
 
+    return df
+end
+
+"""
+    harmonize_col!(df; col, idcol=:CAN_ID) -> DataFrame
+
+Ensure that `col` has at most one non-missing value per `idcol` group and
+fill missing entries with that value. Throws an error if multiple distinct
+non-missing values are found within a group.
+"""
+function harmonize_col!(df::DataFrame; col::Symbol, idcol::Symbol=:CAN_ID)
+
+    val_by_id = Dict{Int,Union{Missing,eltype(skipmissing(df[!, col]))}}()
+
+    for g in groupby(df, idcol)
+        id = g[1, idcol]
+        vals = unique(skipmissing(g[!, col]))
+        if length(vals) == 0
+            val_by_id[id] = missing
+        elseif length(vals) == 1
+            val_by_id[id] = first(vals)
+        else
+            throw(ArgumentError("Multiple $(col) values for $(idcol)=$id: $(collect(vals))"))
+        end
+    end
+
+    df[!, col] = coalesce.(df[!, col], getindex.(Ref(val_by_id), df[!, idcol]))
     return df
 end
