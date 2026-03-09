@@ -28,7 +28,7 @@ output_dir = joinpath(@__DIR__, "src", "SyntheticData")
 mkpath(output_dir)
 output_path = joinpath(output_dir, output_filename)
 
-num_simulations = 2
+num_simulations = 1000
 base_seed = 1234 
 
 origin_date = Date(2000,1,1)
@@ -38,9 +38,10 @@ waiting_indices = Vector{Vector{UInt16}}(undef, num_simulations)
 waiting_day_offsets = Vector{Vector{Int16}}(undef, num_simulations)
 
 Threads.@threads for sim_id in 1:num_simulations
+
     rng = MersenneTwister(base_seed + sim_id) # Ensure that all simulation are independent
 
-    idx, dates = simulate_initial_state_indexed(recipients, donors, fm, u; origin_date=origin_date, rng=rng)
+    idx, dates = simulate_initial_state_indexed(donors, recipients, dm; origin_date=origin_date, rng=rng)
 
     waiting_indices[sim_id] = UInt16.(idx)
     waiting_day_offsets[sim_id] = Int16.(Dates.value.(dates .- origin_date))

@@ -1,5 +1,33 @@
 
 
+"""
+    offered_recipients(df) -> AbstractDataFrame
+
+For a single donor, return the score-ranked recipients that would be offered an
+organ. Rows are kept up to the second transplanted recipient (`STATUS == "TX"`),
+or up to the first if only one recipient is transplanted. If no recipient is
+transplanted, all rows are returned.
+"""
+function offered_recipients(df::AbstractDataFrame)
+    @assert "DON_ID" in names(df) "Missing column :DON_ID"
+    @assert "STATUS" in names(df) "Missing column :STATUS"
+    @assert "DON_CAN_SCORE" in names(df) "Missing column :DON_CAN_SCORE"
+
+    nrow(df) == 0 && return df
+    @assert all(==(df.DON_ID[1]), df.DON_ID) "All rows must correspond to the same :DON_ID"
+
+    df_sort = sort(df, :DON_CAN_SCORE, rev=true)
+
+    accpos = findall(isequal("TX"), df_sort.STATUS)
+    if isempty(accpos)
+        return df_sort
+    elseif length(accpos) == 1
+        return df_sort[1:accpos[1], :]
+    else
+        return df_sort[1:accpos[2], :]
+    end
+end
+
 function retrieve_decision_data(donors_filepath::String, recipients_filepath::String)
 
     df_donors = load_donor(donors_filepath)
