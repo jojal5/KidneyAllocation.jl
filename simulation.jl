@@ -28,6 +28,8 @@ new_recipients = setdiff(cand_before_2020, cand_before_2013)
 
 ## Estimate the donor arrival rate
 
+# TODO: il faut prendre en compte les donneurs qui donnent 2 reins
+
 import KidneyAllocation.load_donor
 
 donor_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Donors.csv"

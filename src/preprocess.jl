@@ -249,12 +249,8 @@ function load_recipient(filepath::AbstractString)
     # Removing the recipient where the dialysis time is missing. It happens for recipients that received a kidney from a living donor.
     dropmissing!(df, [:CAN_DIAL_DT])
 
-    # If listing time is missing, replacing it by the dialysis time
-    df.CAN_LISTING_DT = coalesce.(df.CAN_LISTING_DT, df.CAN_DIAL_DT)
-
-    # If listing is before dialysis, set listing = dialysis
-    df.CAN_LISTING_DT = ifelse.(df.CAN_LISTING_DT < df.CAN_DIAL_DT,
-        df.CAN_DIAL_DT, df.CAN_LISTING_DT)
+    # If listing time is missing, replacing it by the dialysis time. If listing is before dialysis, set listing = dialysis
+    enforce_listing_after_dialysis!(df)
 
     # Keeping only adult recipients
     filter!(row -> years_between(row.CAN_BTH_DT, row.CAN_LISTING_DT) > 17, df)
@@ -375,4 +371,36 @@ function build_recipient_registry(recipient_filepath::String, cpra_filepath::Str
     end
 
     return recipients
+end
+
+"""
+    enforce_listing_after_dialysis!(df) -> AbstractDataFrame
+
+Modify `df` in place to ensure `CAN_LISTING_DT ≥ CAN_DIAL_DT`. If
+`CAN_LISTING_DT` is missing or earlier than `CAN_DIAL_DT`, it is replaced by
+`CAN_DIAL_DT`.
+
+# Notes
+The DataFrame is expected to have the structure returned by
+[`load_recipient`](@ref).
+"""
+function enforce_listing_after_dialysis!(df::AbstractDataFrame)
+    @assert "CAN_LISTING_DT" in names(df) "Missing column :CAN_LISTING_DT"
+    @assert "CAN_DIAL_DT" in names(df) "Missing column :CAN_DIAL_DT"
+
+    for r in eachrow(df)
+        dial = r.CAN_DIAL_DT
+        list = r.CAN_LISTING_DT
+
+        # If dialysis date is missing, we cannot enforce the constraint
+        if ismissing(dial)
+            continue
+        end
+
+        if ismissing(list) || list < dial
+            r.CAN_LISTING_DT = dial
+        end
+    end
+
+    return df
 end

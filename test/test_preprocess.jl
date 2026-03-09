@@ -141,4 +141,17 @@
     end
 
 
+    @testset "enforce_listing_after_dialysis!()" begin
+        import KidneyAllocation.enforce_listing_after_dialysis!
+
+        df = DataFrame(CAN_ID=[1, 2, 3, 4], CAN_DIAL_DT=[Date(2000, 1, 1), Date(2001, 1, 1), Date(2002, 1, 1), missing], CAN_LISTING_DT=[Date(2001, 1, 1), Date(1990, 1, 1), missing, Date(2003, 1, 1)])
+        enforce_listing_after_dialysis!(df)
+
+        @test df.CAN_LISTING_DT[1] == Date(2001, 1, 1)
+        @test df.CAN_LISTING_DT[2] == Date(2001, 1, 1)
+        @test df.CAN_LISTING_DT[3] == Date(2002, 1, 1)
+        @test df.CAN_LISTING_DT[4] == Date(2003, 1, 1)
+    end
+
 end
+

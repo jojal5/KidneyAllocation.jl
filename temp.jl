@@ -29,7 +29,7 @@ for (i, g) in enumerate(G)
     arrival[i], departure[i] = recipient_arrival_departure(g)
 end
 
-active_recipient_id = can_id[arrival.<Date(2014, 1, 1).<departure]
+active_recipient_id = can_id[(arrival.≤Date(2014, 1, 1)).&&(Date(2014, 1, 1).<departure)]
 
 
 df = filter(row -> row.CAN_ID ∈ active_recipient_id, df_recipient)
@@ -98,13 +98,20 @@ end
 """
     active_recipient_ids(recipient_filepath, date) -> Vector{Int}
 
-Return the `CAN_ID`s of recipients active on `date`, based on the
-recipient status history in the CSV file.
+Return the `CAN_ID`s of recipients active on `date` after removing rows with
+missing values in required fields.
 """
 function active_recipient_ids(recipient_filepath::String, date::Date)
     df = load_recipient(recipient_filepath)
 
-    out = Int64[]
+    required = Symbol[
+        :CAN_ID, :UPDATE_TM, :OUTCOME,
+        :CAN_BTH_DT, :CAN_DIAL_DT, :CAN_LISTING_DT,
+        :CAN_BLOOD, :CAN_A1, :CAN_A2, :CAN_B1, :CAN_B2, :CAN_DR1, :CAN_DR2
+    ]
+    dropmissing!(df, required)
+
+    out = Int[]
     for g in groupby(df, :CAN_ID)
         a, d = recipient_arrival_departure(g)
         if a ≤ date < d
@@ -114,6 +121,13 @@ function active_recipient_ids(recipient_filepath::String, date::Date)
 
     return out
 end
+
+# Registry (tiny and fakes)
+registry = [
+    Recipient(Date(1979, 1, 1), Date(1995, 1, 1), Date(1998, 1, 1), O, 68, 203, 39, 77, 15, 17, 0),
+    Recipient(Date(1981, 1, 1), Date(1997, 1, 1), Date(2000, 6, 1), A, 69, 2403, 7, 35, 4, 103, 10),
+    Recipient(Date(1963, 1, 1), Date(1998, 1, 1), Date(2001, 5, 1), B, 25, 68, 67, 5102, 11, 16, 20),
+]
 
 
 """
@@ -160,11 +174,9 @@ function recipients_from_can_ids(
 end
 
 
-recipients_from_can_ids(recipient_filepath,cpra_filepath,[1,3])
+recipients_from_can_ids(recipient_filepath, cpra_filepath, [1, 3])
 
 
-
-# TODO : gérer les données manquantes (peut-être dans active_recipient_ids)
 function get_active_recipients(recipient_filepath::String, cpra_filepath::String, date::Date)
 
     can_ids = active_recipient_ids(recipient_filepath::String, date::Date)
@@ -174,16 +186,14 @@ function get_active_recipients(recipient_filepath::String, cpra_filepath::String
     return recipients
 end
 
-can_ids = active_recipient_ids(recipient_filepath, Date(2014,1,1,))
+can_ids = active_recipient_ids(recipient_filepath, Date(2014, 1, 1,))
 r = recipients_from_can_ids(recipient_filepath, cpra_filepath, can_ids)
 
-
-get_active_recipients(recipient_filepath, cpra_filepath, Date(2014,1,1))
-
+r = get_active_recipients(recipient_filepath, cpra_filepath, Date(2014, 1, 1))
 
 
 
-
+## Simulation of the allocation process
 
 
 
@@ -191,6 +201,353 @@ get_active_recipients(recipient_filepath, cpra_filepath, Date(2014,1,1))
 
 
 
+
+function infer_recipient_departure(df::AbstractDataFrame, future_date=Date(2100, 1, 1))
+
+    @assert "OUTCOME" in names(df) "Missing column :OUTCOME"
+    @assert "UPDATE_TM" in names(df) "Missing column :UPDATE_TM"
+    @assert all(==(df.CAN_ID[1]), df.CAN_ID) "All rows must correspond to the same :CAN_ID"
+
+    # Sort the dataframe rows so that the most recent is on top
+    idx = sortperm(df.UPDATE_TM; rev=true)
+    outcomes = df.OUTCOME[idx]
+    updates = df.UPDATE_TM[idx]
+
+    if outcomes[1] == "1"
+        departure = future_date # Arbitrary date after the end of the historic period
+    else
+        departure = updates[1] # Si transplanté ou retiré
+    end
+
+    return departure
+
+end
+
+
+
+
+df_recipient = load_recipient(recipient_filepath)
+
+G = groupby(df_recipient, :CAN_ID)
+
+infer_recipient_departure(G[1000])
+
+dep_by_id = Dict{Int,Date}()
+
+for g in G
+    id = g.CAN_ID[1]
+    dep = infer_recipient_departure(g)
+    dep_by_id[id] = dep
+end
+
+df_recipient.DEPARTURE_DT = getindex.(Ref(dep_by_id), df_recipient.CAN_ID)
+
+
+
+
+
+## Fix load_recipient
+
+import KidneyAllocation: parse_hla_int, fill_hla_pairs!, infer_recipient_expiration_date, load_donor
+
+filepath = recipient_filepath
+
+df = CSV.read(filepath, DataFrame, missingstring=["-", "", "NULL"])
+
+# Keeping only the recipients for kidney transplant
+filter!(row -> row.OUTCOME ∈ ("TX", "1", "0", "X", "Dcd", "Tx Vivant"), df)
+
+# Replacing the value 24L and 24Low with 24 for instance
+df.CAN_A2 = parse_hla_int.(df.CAN_A2)
+
+fill_hla_pairs!(df, "CAN")
+
+col_to_harmonize = [:CAN_A1, :CAN_A2, :CAN_B1, :CAN_B2, :CAN_DR1, :CAN_DR2, :CAN_LISTING_DT, :CAN_DIAL_DT]
+
+for col in col_to_harmonize
+    harmonize_col!(df, col=col)
+end
+
+dropmissing!(df, :CAN_DIAL_DT)
+
+enforce_listing_after_dialysis!(df)
+
+
+
+
+
+
+
+
+"""
+    infer_recipient_expiration_date(df::AbstractDataFrame) -> Union{Date,Nothing}
+
+Infer the expiration date for a single recipient from their longitudinal status history.
+
+### Details
+The input `df` must correspond to a single recipient (`CAN_ID`) and contain
+at least the columns `:OUTCOME` and `:UPDATE_TM`.
+
+The history is sorted internally by `:UPDATE_TM` in descending order
+(most recent first).
+
+Rules (case-insensitive):
+- If the most recent outcome is `"TX"` or `"1"`, return `nothing`.
+- Otherwise:
+  - If `"1"` never occurs in the history, return the oldest `UPDATE_TM`.
+  - If `"1"` occurs but is not the most recent status, return the `UPDATE_TM`
+    immediately preceding the first `"1"` in the descending timeline.
+"""
+function infer_recipient_expiration_date(df::AbstractDataFrame)
+    @assert "OUTCOME" in names(df) "Missing column :OUTCOME"
+    @assert "UPDATE_TM" in names(df) "Missing column :UPDATE_TM"
+    @assert all(==(df.CAN_ID[1]), df.CAN_ID) "All rows must correspond to the same :CAN_ID"
+
+    # Sort the dataframe lines so that the most recent is on top
+    idx = sortperm(df.UPDATE_TM; rev=true)
+    outcomes = uppercase.(String.(df.OUTCOME[idx]))
+    updates = df.UPDATE_TM[idx]
+
+    if outcomes[1] == "TX" || outcomes[1] == "1" # If the recipient has been transplanted or still active, then there is no expiration date.
+        return nothing
+    else
+        ind_active = findfirst(==("1"), outcomes)
+        if ind_active === nothing # Recipient was never active
+            return updates[end]   # oldest date
+        else
+            return updates[ind_active-1] # # Si non transplanté avec un donneur décédé, on prend la dernière date d'attente active pour calculer la date d'expiration
+        end
+    end
+end
+
+# TODO
+function infer_recipient_departure(df_recipient, donor_filepath)
+
+    # date de transplantation si transplanté
+    # date de retrait si retiré
+    # date future si toujours en attente
+
+end
+
+
+
+"""
+    offered_recipients(df) -> AbstractDataFrame
+
+For a single donor, return the score-ranked recipients that would be offered an
+organ. Rows are kept until all accepted offers are reached, up to a maximum of
+two acceptances (two kidneys). If fewer acceptances occur, all rows up to the
+last acceptance are returned.
+"""
+function offered_recipients(df::AbstractDataFrame)
+    @assert "DON_ID" in names(df) "Missing column :DON_ID"
+    @assert "DECISION" in names(df) "Missing column :DECISION"
+    @assert "DON_CAN_SCORE" in names(df) "Missing column :DON_CAN_SCORE"
+
+    nrow(df) == 0 && return df
+    @assert all(==(df.DON_ID[1]), df.DON_ID) "All rows must correspond to the same :DON_ID"
+
+    df_sort = sort(df, :DON_CAN_SCORE, rev=true)
+
+    accpos = findall(==("Acceptation"), df_sort.DECISION)
+    if isempty(accpos)
+        return df_sort
+    elseif length(accpos) == 1
+        return df_sort[1:accpos[1], :]
+    else
+        return df_sort[1:accpos[2], :]
+    end
+end
+
+@testset "offered_recipients()" begin
+
+    # Missing columns
+    df = DataFrame(DECISION = ["Refus", "Acceptation"], DON_CAN_SCORE = [30, 29])
+    @test_throws AssertionError offered_recipients(df)
+
+    df = DataFrame(DON_ID = [1, 1], DON_CAN_SCORE = [30, 29])
+    @test_throws AssertionError offered_recipients(df)
+
+    df = DataFrame(DON_ID = [1, 1], DECISION = ["Refus", "Acceptation"])
+    @test_throws AssertionError offered_recipients(df)
+
+    # Not a single donor
+    df = DataFrame(DON_ID = [1, 2], DECISION = ["Refus", "Acceptation"], DON_CAN_SCORE = [30, 29])
+    @test_throws AssertionError offered_recipients(df)
+
+    # Single row accepted
+    df = DataFrame(DON_ID = 1, DECISION = "Acceptation", DON_CAN_SCORE = 30)
+    df_offered = offered_recipients(df)
+    @test df_offered.DON_CAN_SCORE == [30]
+
+    # The first offer is refused, but the second is accepted (not sorted)
+    df = DataFrame(DON_ID=[1,1], DECISION=["Acceptation","Refus"], DON_CAN_SCORE=[29,30])
+    df_offered = offered_recipients(df)
+    @test df_offered.DON_CAN_SCORE == [30,29] 
+
+    # All the offers are refused
+    df = DataFrame(DON_ID = [1, 1], DECISION = ["Refus", "Refus"], DON_CAN_SCORE = [30, 29])
+    df_offered = offered_recipients(df)
+    @test df_offered.DON_CAN_SCORE == [30, 29]
+
+    # The fourth offers is the last accepted.
+    df = DataFrame(DON_ID = [1, 1, 1, 1, 1], DECISION = ["Refus", "Acceptation", "Refus", "Acceptation", "Refus"], DON_CAN_SCORE = [30, 29, 28, 27, 26])
+    df_offered = offered_recipients(df)
+    @test df_offered.DON_CAN_SCORE == [30, 29, 28, 27]
+
+    # Three offers are marked as accepted.
+    df = DataFrame(DON_ID = [1, 1, 1, 1, 1], DECISION = ["Refus", "Acceptation", "Refus", "Acceptation", "Acceptation"], DON_CAN_SCORE = [30, 29, 28, 27, 26])
+    df_offered = offered_recipients(df)
+    @test df_offered.DON_CAN_SCORE == [30, 29, 28, 27]
+end
+
+
+
+
+
+"""
+    transplant_dates_by_recipient(df_donors) -> Dict{Int,Date}
+
+Return a dictionary mapping each transplanted `CAN_ID` to its transplant date
+(`DON_DEATH_TM`), based on accepted donor–recipient pairs.
+"""
+function transplant_dates_by_recipient(df_donors::AbstractDataFrame)
+
+    df = unique(df_donors, [:CAN_ID, :DON_ID])
+    filter!(row -> row.DECISION == "Acceptation", df)
+
+    transplant_date_by_id = Dict{Int,Date}()
+
+    for r in eachrow(df)
+        transplant_date_by_id[r.CAN_ID] = r.DON_DEATH_TM
+    end
+
+    return transplant_date_by_id
+end
+
+df_donors = load_donor(donor_filepath)
+transplant_dates_by_recipient(df_donors)
+
+
+df_donors
+
+
+
+
+
+
+function number_of_given_kidney(df_donors::AbstractDataFrame)
+
+    kidney_by_don_id = Dict{Int,Int}()
+
+    for g in groupby(df_donors, :DON_ID)
+        kidney_by_don_id[g.DON_ID[1]] = count(g.DECISION .== "Acceptation")
+    end
+
+    return kidney_by_don_id
+
+end
+
+@time number_of_given_kidney(df_donors)
+
+
+filter(row->row.DON_ID ==1175, df_donors)
+
+
+"""
+    enforce_listing_after_dialysis!(df) -> AbstractDataFrame
+
+Ensure that `CAN_LISTING_DT ≥ CAN_DIAL_DT`. If `CAN_LISTING_DT` is missing
+or earlier than `CAN_DIAL_DT`, it is replaced by `CAN_DIAL_DT`.
+"""
+function enforce_listing_after_dialysis!(df::AbstractDataFrame)
+    @assert "CAN_LISTING_DT" in names(df) "Missing column :CAN_LISTING_DT"
+    @assert "CAN_DIAL_DT" in names(df) "Missing column :CAN_DIAL_DT"
+
+    for r in eachrow(df)
+        dial = r.CAN_DIAL_DT
+        list = r.CAN_LISTING_DT
+
+        # If dialysis date is missing, we cannot enforce the constraint
+        if ismissing(dial)
+            continue
+        end
+
+        if ismissing(list) || list < dial
+            r.CAN_LISTING_DT = dial
+        end
+    end
+
+    return df
+end
+
+@testset "enforce_listing_after_dialysis!()" begin
+    df = DataFrame(CAN_ID=[1, 2, 3, 4], CAN_DIAL_DT=[Date(2000, 1, 1), Date(2001, 1, 1), Date(2002, 1, 1), missing], CAN_LISTING_DT=[Date(2001, 1, 1), Date(1990, 1, 1), missing, Date(2003, 1, 1)])
+    enforce_listing_after_dialysis!(df)
+
+    @test df.CAN_LISTING_DT[1] == Date(2001, 1, 1)
+    @test df.CAN_LISTING_DT[2] == Date(2001, 1, 1)
+    @test df.CAN_LISTING_DT[3] == Date(2002, 1, 1)
+    @test df.CAN_LISTING_DT[4] == Date(2003, 1, 1)
+end
+
+
+"""
+    harmonize_col!(df; col, idcol=:CAN_ID) -> DataFrame
+
+Ensure that `col` has at most one non-missing value per `idcol` group and
+fill missing entries with that value. Throws an error if multiple distinct
+non-missing values are found within a group.
+"""
+function harmonize_col!(df::DataFrame; col::Symbol, idcol::Symbol=:CAN_ID)
+
+    val_by_id = Dict{Int,Union{Missing,eltype(skipmissing(df[!, col]))}}()
+
+    for g in groupby(df, idcol)
+        id = g[1, idcol]
+        vals = unique(skipmissing(g[!, col]))
+        if length(vals) == 0
+            val_by_id[id] = missing
+        elseif length(vals) == 1
+            val_by_id[id] = first(vals)
+        else
+            throw(ArgumentError("Multiple $(col) values for $(idcol)=$id: $(collect(vals))"))
+        end
+    end
+
+    df[!, col] = coalesce.(df[!, col], getindex.(Ref(val_by_id), df[!, idcol]))
+    return df
+end
+
+@testset "harmonize_col()" begin
+
+    df = DataFrame(CAN_ID=1, CAN_DIAL_DT=Date(2000, 1, 1), UPDATE_TM=[Date(2001, 1, 1), Date(2002, 1, 1), Date(2003, 1, 1)])
+    append!(df, DataFrame(CAN_ID=2, CAN_DIAL_DT=Date(2000, 1, 2), UPDATE_TM=[Date(2001, 1, 1), Date(2002, 1, 1), Date(2003, 1, 1)]))
+
+    harmonize_col!(df, col=:CAN_DIAL_DT)
+    G = groupby(df, :CAN_ID)
+    @test all(G[1].CAN_DIAL_DT .== Date(2000, 1, 1))
+    @test all(G[2].CAN_DIAL_DT .== Date(2000, 1, 2))
+
+    df = DataFrame(CAN_ID=1, CAN_DIAL_DT=[Date(2000, 1, 1), missing, missing], UPDATE_TM=[Date(2001, 1, 1), Date(2002, 1, 1), Date(2003, 1, 1)])
+    append!(df, DataFrame(CAN_ID=2, CAN_DIAL_DT=[missing, Date(2000, 1, 2), Date(2000, 1, 2)], UPDATE_TM=[Date(2001, 1, 1), Date(2002, 1, 1), Date(2003, 1, 1)]))
+
+    harmonize_col!(df, col=:CAN_DIAL_DT)
+    G = groupby(df, :CAN_ID)
+    @test all(G[1].CAN_DIAL_DT .== Date(2000, 1, 1))
+    @test all(G[2].CAN_DIAL_DT .== Date(2000, 1, 2))
+
+    df = DataFrame(CAN_ID=1, CAN_DIAL_DT=[Date(2000, 1, 1), Date(2100, 1, 1), missing], UPDATE_TM=[Date(2001, 1, 1), Date(2002, 1, 1), Date(2003, 1, 1)])
+    append!(df, DataFrame(CAN_ID=2, CAN_DIAL_DT=Date(2000, 1, 2), UPDATE_TM=[Date(2001, 1, 1), Date(2002, 1, 1), Date(2003, 1, 1)]))
+
+    @test_throws ArgumentError harmonize_col!(df, col=:CAN_DIAL_DT)
+
+end
+
+
+
+
+##
 
 function simulate_initial_state_indexed(
     donors::Vector{Donor},
