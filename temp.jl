@@ -331,76 +331,6 @@ end
 
 
 
-"""
-    offered_recipients(df) -> AbstractDataFrame
-
-For a single donor, return the score-ranked recipients that would be offered an
-organ. Rows are kept until all accepted offers are reached, up to a maximum of
-two acceptances (two kidneys). If fewer acceptances occur, all rows up to the
-last acceptance are returned.
-"""
-function offered_recipients(df::AbstractDataFrame)
-    @assert "DON_ID" in names(df) "Missing column :DON_ID"
-    @assert "DECISION" in names(df) "Missing column :DECISION"
-    @assert "DON_CAN_SCORE" in names(df) "Missing column :DON_CAN_SCORE"
-
-    nrow(df) == 0 && return df
-    @assert all(==(df.DON_ID[1]), df.DON_ID) "All rows must correspond to the same :DON_ID"
-
-    df_sort = sort(df, :DON_CAN_SCORE, rev=true)
-
-    accpos = findall(==("Acceptation"), df_sort.DECISION)
-    if isempty(accpos)
-        return df_sort
-    elseif length(accpos) == 1
-        return df_sort[1:accpos[1], :]
-    else
-        return df_sort[1:accpos[2], :]
-    end
-end
-
-@testset "offered_recipients()" begin
-
-    # Missing columns
-    df = DataFrame(DECISION = ["Refus", "Acceptation"], DON_CAN_SCORE = [30, 29])
-    @test_throws AssertionError offered_recipients(df)
-
-    df = DataFrame(DON_ID = [1, 1], DON_CAN_SCORE = [30, 29])
-    @test_throws AssertionError offered_recipients(df)
-
-    df = DataFrame(DON_ID = [1, 1], DECISION = ["Refus", "Acceptation"])
-    @test_throws AssertionError offered_recipients(df)
-
-    # Not a single donor
-    df = DataFrame(DON_ID = [1, 2], DECISION = ["Refus", "Acceptation"], DON_CAN_SCORE = [30, 29])
-    @test_throws AssertionError offered_recipients(df)
-
-    # Single row accepted
-    df = DataFrame(DON_ID = 1, DECISION = "Acceptation", DON_CAN_SCORE = 30)
-    df_offered = offered_recipients(df)
-    @test df_offered.DON_CAN_SCORE == [30]
-
-    # The first offer is refused, but the second is accepted (not sorted)
-    df = DataFrame(DON_ID=[1,1], DECISION=["Acceptation","Refus"], DON_CAN_SCORE=[29,30])
-    df_offered = offered_recipients(df)
-    @test df_offered.DON_CAN_SCORE == [30,29] 
-
-    # All the offers are refused
-    df = DataFrame(DON_ID = [1, 1], DECISION = ["Refus", "Refus"], DON_CAN_SCORE = [30, 29])
-    df_offered = offered_recipients(df)
-    @test df_offered.DON_CAN_SCORE == [30, 29]
-
-    # The fourth offers is the last accepted.
-    df = DataFrame(DON_ID = [1, 1, 1, 1, 1], DECISION = ["Refus", "Acceptation", "Refus", "Acceptation", "Refus"], DON_CAN_SCORE = [30, 29, 28, 27, 26])
-    df_offered = offered_recipients(df)
-    @test df_offered.DON_CAN_SCORE == [30, 29, 28, 27]
-
-    # Three offers are marked as accepted.
-    df = DataFrame(DON_ID = [1, 1, 1, 1, 1], DECISION = ["Refus", "Acceptation", "Refus", "Acceptation", "Acceptation"], DON_CAN_SCORE = [30, 29, 28, 27, 26])
-    df_offered = offered_recipients(df)
-    @test df_offered.DON_CAN_SCORE == [30, 29, 28, 27]
-end
-
 
 
 
@@ -429,52 +359,8 @@ df_donors = load_donor(donor_filepath)
 transplant_dates_by_recipient(df_donors)
 
 
-df_donors
 
 
-
-
-"""
-    kidneys_given_by_donor(df_donors) -> Dict{Int,Int}
-
-Return the number of given kidneys for each `DON_ID`.
-"""
-function kidneys_given_by_donor(df_donors::AbstractDataFrame)
-    @assert "DON_ID" in names(df_donors) "Missing column :DON_ID"
-    @assert "STATUS" in names(df_donors) "Missing column :STATUS"
-
-    kidney_by_don_id = Dict{Int,Int}()
-
-    for g in groupby(df_donors, :DON_ID)
-       kidney_by_don_id[g.DON_ID[1]] = count(==("TX"), skipmissing(g.STATUS))
-    end
-
-    return kidney_by_don_id
-
-end
-
-@time kidneys_given_by_donor(df_donors)
-
-@testset "kidneys_given_by_donor()" begin
-
-    import KidneyAllocation.kidneys_given_by_donor
-
-    # Missing columns
-    df = DataFrame(STATUS = "TX")
-    @test_throws AssertionError kidneys_given_by_donor(df)
-    df = DataFrame(DON_ID = 1)
-    @test_throws AssertionError kidneys_given_by_donor(df)
-
-    df = DataFrame(DON_ID = 1, STATUS = [missing, missing, "TX", "TX"])
-    append!(df, DataFrame(DON_ID = 2, STATUS = [missing, "TX", missing]))
-    append!(df, DataFrame(DON_ID = 3, STATUS = [missing, missing, missing]))
-    d = kidneys_given_by_donor(df)
-    
-    @test d[1] == 2
-    @test d[2] == 1
-    @test d[3] == 0
-
-end
 
 
 
