@@ -10,102 +10,129 @@ using KidneyAllocation
 import KidneyAllocation.load_recipient
 
 recipient_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Candidates.csv"
-# cpra_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/CandidatesCPRA.csv"
+cpra_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/CandidatesCPRA.csv"
 # recipients = build_recipient_registry(recipient_filepath, cpra_filepath)
 
-df = load_recipient(recipient_filepath)
+df_recipient = load_recipient(recipient_filepath)
+select!(df_recipient, Not(:NB_PAST_TRANS))
+dropmissing!(df_recipient)
 
-df2 = filter(row -> year(row.CAN_LISTING_DT) < 2013, df)
-cand_before_2013 = unique(df2.CAN_ID)
+G = groupby(df_recipient, :CAN_ID)
 
-df2 = filter(row -> year(row.CAN_LISTING_DT) < 2020, df)
-cand_before_2020 = unique(df2.CAN_ID)
+n = 0
+for g in G
+    r = first(g)
+    if  Date(2012,12,31) < r.CAN_LISTING_DT < Date(2020,1,1)
+        n+=1
+    end
+end
 
-new_recipients = setdiff(cand_before_2020, cand_before_2013)
+recipient_arrival_rate = n/6
 
-λᵣ = length(new_recipients)/6
+## Build recipient registry by CAN_ID
+
+recipient_by_CAN_ID = KidneyAllocation.build_recipient_registry(recipient_filepath, cpra_filepath)
+
+## Retrieve active waiting recipients at the origin
+
+import KidneyAllocation: recipient_arrival_departure
+
+origin = Date(2014,1,1)
+
+G = groupby(df_recipient, :CAN_ID)
+
+origin = Date(2014,1,1)
+active_can_id = Int[]
+
+for g in G
+    arrival, departure = recipient_arrival_departure(g)
+    if arrival ≤ origin < departure
+        push!(active_can_id, g.CAN_ID[1])
+    end
+end
+
+initial = [recipient_registry_by_can_id[i] for i in active_can_id]
 
 
+## Generate recipient arrivals for the next nyears
+
+import KidneyAllocation.shift_recipient_timeline
+
+nyears = 10
+
+# Number of recipients
+nᵣ = rand(Poisson(recipient_arrival_rate * 10)) 
+# Arrival dates                             
+tᵣ = KidneyAllocation.sample_days(Date(2014, 1, 1), Date(2023, 12, 31), nᵣ)
+# Sampled CAN_ID
+sampled_can_id = rand(keys(recipient_registry_by_can_id), nᵣ)
+# Sampled recipients with the adjusted timeline 
+new_recipients = Vector{Recipient}(undef, nᵣ)
+for (i,id) in enumerate(sampled_can_id)
+    sampled_recipient = recipient_registry_by_can_id[id]
+    new_recipients[i] = shift_recipient_timeline(sampled_recipient, tᵣ[i])
+end
+
+# Sanity check
+# KidneyAllocation.get_arrival.(new_recipients) == tᵣ
+
+waiting_recipients = vcat(initial, new_recipients)
+
+       
 ## Estimate the donor arrival rate
 
-# TODO: il faut prendre en compte les donneurs qui donnent 2 reins
-
-import KidneyAllocation.load_donor
+import KidneyAllocation: load_donor
 
 donor_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Donors.csv"
 
-df = load_donor(donor_filepath)
-df2 = filter(row -> 2014 ≤ year(row.DON_DEATH_TM) < 2020, df)
-unique_don_id = unique(df2.DON_ID)
-λₒ = length(unique_don_id) / 6
+df_donors = load_donor(donor_filepath)
+
+G = groupby(df_donors, :DON_ID)
+
+n = 0
+for g in G
+    r = first(g)
+    if  Date(2012,12,31) < r.DON_DEATH_TM < Date(2020,1,1)
+        n+=1
+    end
+end
+
+donor_arrival_rate = n/6
+
+## Build donor registry by DON_ID
+
+import KidneyAllocation: donor_from_row
+
+donor_registry_by_don_id = Dict{Int, Donor}()
+
+for g in G
+    r = first(g)
+    donor_registry_by_don_id[r.DON_ID] = donor_from_row(r)
+end
+
+
+
+
+
+
+
+
+import KidneyAllocation: kidneys_given_by_donor
+
 
 ## Load decision model
 
-
-# Fit decision model (GLM based)
-data = retrieve_decision_data(donor_filepath, recipient_filepath)
-
-model = @formula(DECISION ~ log(KDRI) + CAN_AGE * KDRI * CAN_WAIT + CAN_AGE^2 * KDRI * CAN_WAIT^2 + CAN_BLOOD + DON_AGE)
-
-fm = glm(model, data, Bernoulli(), LogitLink())
-
-gt = data.DECISION
-p = GLM.predict(fm)
-
-# threshold = fit_threshold_f1(gt, p)
-threshold = fit_threshold_prevalence(gt, p)
-
-dm = GLMDecisionModel(fm, threshold)
-# ------------------------------------------------------------------------------------
+@load "src/SyntheticData/TreeDecisionModel.jld2"
 
 
-# Fit decision model (Classification tree based)
-data = retrieve_decision_data(donor_filepath, recipient_filepath)
-
-features = Symbol.([
- "DON_AGE"
- "KDRI"
- "CAN_AGE"
- "CAN_WAIT"
- "MISMATCH"
- "is_bloodtype_O"
- "is_bloodtype_A"
- "is_bloodtype_B"
- "is_bloodtype_AB"])
-
- X = KidneyAllocation.construct_feature_matrix_from_df(data, features)
-
-# y = Int.(data.DECISION)
-y = data.DECISION
-
-m = DecisionTreeClassifier(
-                max_depth=10, min_samples_leaf=50,
-                pruning_purity_threshold=1
-            )
-
-@time DecisionTree.fit!(m, X, y)
-
-gt = data.DECISION
-p = DecisionTree.predict_proba(m, X)[:,2]
-
-threshold = fit_threshold_prevalence(gt, p)
-
-dm = TreeDecisionModel(m, features, threshold)
-
-# ------------------------------------------------------------------------------------
 
 
-# Retrieve the waiting recipients at January 1st, 2014
-ind_active = is_active.(recipients, Date(2013, 12, 31))
-waiting_recipients = recipients[ind_active]
 
-# Generate new recipients for the next 10 years
-nᵣ = rand(Poisson(λᵣ * 10))                                                             # Number of recipients
-tᵣ = KidneyAllocation.sample_days(Date(2014, 1, 1), Date(2023, 12, 31), nᵣ)             # Arrival dates
-sampled_recipients = rand(recipients, nᵣ)                                               # Sampled recipients
-new_recipients = KidneyAllocation.shift_recipient_timeline.(sampled_recipients, tᵣ)     # Adjust the sampled recipient timelines
 
-append!(waiting_recipients, new_recipients)                                             # Add the new recipients to the original list
+
+
+
+                                        # Add the new recipients to the original list
 
 
 # Generate new donors for the next 10 years
