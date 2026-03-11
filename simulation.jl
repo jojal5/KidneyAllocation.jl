@@ -61,7 +61,7 @@ import KidneyAllocation.shift_recipient_timeline
 nyears = 10
 
 # Number of recipients
-nᵣ = rand(Poisson(recipient_arrival_rate * 10)) 
+nᵣ = rand(Poisson(recipient_arrival_rate * nyears)) 
 # Arrival dates                             
 tᵣ = KidneyAllocation.sample_days(Date(2014, 1, 1), Date(2023, 12, 31), nᵣ)
 # Sampled CAN_ID
@@ -101,41 +101,41 @@ donor_arrival_rate = n/6
 
 ## Build donor registry by DON_ID
 
-
 donor_by_don_id = KidneyAllocation.build_donor_registry(donor_filepath)
+
+## Generate donor arrivals for the next nyears
+
+# Number of recipients
+nₒ = rand(Poisson(donor_arrival_rate * nyears)) 
+# Arrival dates                             
+tₒ = KidneyAllocation.sample_days(Date(2014, 1, 1), Date(2023, 12, 31), nₒ)
+# Sampled DON_ID
+sampled_don_id = rand(keys(donor_by_don_id), nₒ)
+
+## Sampled donors 
+
+kidney_by_don_id = KidneyAllocation.kidneys_given_by_donor(df_donors)
+
+# Sampled donors with the adjusted arrival and the number of given kidneys
+donors = Donor[]
+for (i,id) in enumerate(sampled_don_id)
+    sampled_donor = donor_by_don_id[id]
+    for j = 1:kidney_by_don_id[id]
+        push!(donors, KidneyAllocation.set_donor_arrival(sampled_donor, tₒ[i]))
+    end
+end
 
 
 ## Load decision model
 
 @load "src/SyntheticData/TreeDecisionModel.jld2"
 
+## Test the allocation for one donor
 
+import KidneyAllocation: is_active, is_abo_compatible, allocate_one_donor
 
-
-
-
-
-
-
-                                        # Add the new recipients to the original list
-
-
-# Generate new donors for the next 10 years
-nₒ = rand(Poisson(λₒ * 10))                                                             # Number of recipients
-tₒ = KidneyAllocation.sample_days(Date(2014, 1, 1), Date(2023, 12, 31), nₒ)             # Arrival dates
-sampled_donors = rand(donors, nₒ)                                                       # Sampled recipients
-new_donors = set_donor_arrival.(sampled_donors, tₒ)                                     # Adjust the arrival dates
-
-# KidneyAllocation.get_arrival.(new_donors)
-
-
-donor = new_donors[4]
+donor = donors[1]
 arrival = donor.arrival
-# eligible_index = is_active.(waiting_recipients, arrival) .&& is_abo_compatible.(donor, waiting_recipients)
-# eligible_recipients = waiting_recipients[eligible_index]
-# chosen_recipient_idx = allocate_one_donor(donor, eligible_recipients, fm, u)
-# chosen_recipient = eligible_recipients[chosen_recipient_idx]
-# @time allocate_one_donor(eligible_recipients, donor, fm, u)
 
 eligible_mask = is_active.(waiting_recipients, arrival) .&& is_abo_compatible.(donor, waiting_recipients)
 eligible_index = findall(eligible_mask)
@@ -149,12 +149,39 @@ ranked_indices = KidneyAllocation.rank_eligible_indices_by_score(donor,waiting_r
 chosen_recipient = waiting_recipients[ranked_indices[chosen_index]]
 
 # Sanity checks
-score.(donor, chosen_recipient)
+KidneyAllocation.score.(donor, chosen_recipient)
 KidneyAllocation.acceptance_probability(dm, chosen_recipient, donor)
 KidneyAllocation.decide(dm, chosen_recipient, donor)
 
+## Test the allocation for all donors
 
-@time ind = allocate(new_donors, waiting_recipients, dm)
+import KidneyAllocation.allocate
+
+@time ind = allocate(donors, waiting_recipients, dm)
+
+
+is_unallocated = trues(length(waiting_recipients))                 
+allocated_recipient_index = zeros(Int64,length(donors))
+
+    for donor_idx in eachindex(donors)
+        println(donor_idx)
+        donor = donors[donor_idx]
+
+        allocated_recipient_index[donor_idx] = allocate_one_donor(donor, waiting_recipients, dm, is_unallocated)
+
+        if allocated_recipient_index[donor_idx] != 0
+            is_unallocated[allocated_recipient_index[donor_idx]] = false
+        end
+    end
+
+
+donor_idx = 14
+donor = donors[donor_idx]
+
+eligible_indices = KidneyAllocation.get_eligible_recipient_indices(donor, waiting_recipients, is_unallocated)
+
+ind = KidneyAllocation.is_abo_compatible.(donor, waiting_recipients)
+count(ind)
 
 
 # Sanity checks

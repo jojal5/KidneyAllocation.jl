@@ -12,9 +12,13 @@ function allocate_one_donor(
     is_unallocated::BitVector=trues(length(recipients))
 )
     eligible_indices = get_eligible_recipient_indices(donor, recipients, is_unallocated)
-    ranked_indices = rank_eligible_indices_by_score(donor, recipients, eligible_indices)
 
-    return allocate_one_donor(donor, recipients, dm, ranked_indices)
+    if isempty(eligible_indices) # No eligible recipient
+        return 0
+    else
+        ranked_indices = rank_eligible_indices_by_score(donor, recipients, eligible_indices)
+        return allocate_one_donor(donor, recipients, dm, ranked_indices)
+    end
 
 end
 
