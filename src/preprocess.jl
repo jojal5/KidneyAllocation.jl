@@ -182,24 +182,21 @@ function donor_from_row(r::DataFrameRow)
     return donor
 end
 
+
 """
-    build_donor_registry(filepath::String) -> Vector{Donor}
+    build_donor_registry(filepath::String) -> Dict{Int,Donor}
 
-Construct a registry of `Donor` objects from a CSV file containing donor information.
+Build a dictionary of `Donor` objects keyed by `DON_ID` from a donor CSV file.
 
-### Details
-This function loads donor data using [`load_donor`](@ref) and applies the following steps:
-- Removes donors with missing information required for donor characterization and KDRI computation.
-- Computes the Kidney Donor Risk Index (KDRI) for each donor.
+Rows with missing values required to construct a donor and compute KDRI are
+discarded. For each `DON_ID`, one `Donor` is constructed from the corresponding
+row using `donor_from_row`.
 
 ### Notes
 - The donor arrival date is derived from the donor death date (`DON_DEATH_TM`).
 - Rows with incomplete data required for KDRI computation are discarded.
-
-### Returns
-A vector of `Donor` objects for each valid donor record.
 """
-function build_donor_registry(filepath::String)
+function build_donor_registry(filepath::String)::Dict{Int,Donor}
     df = load_donor(filepath)
 
     kdri_required = Symbol[
@@ -212,17 +209,15 @@ function build_donor_registry(filepath::String)
     dropmissing!(df, kdri_required)
     dropmissing!(df, donor_required)
 
-    G = groupby(df, :DON_ID)
-    donors = Vector{Donor}(undef, length(G))
+    donor_by_don_id = Dict{Int,Donor}()
 
-    for (i, g) in enumerate(G)
+    for g in groupby(df, :DON_ID)
         r = first(g)
-
-        donors[i] = donor_from_row(r)
-
+        don_id = r.DON_ID
+        donor_by_don_id[don_id] = donor_from_row(r)
     end
 
-    return donors
+    return donor_by_don_id
 end
 
 """

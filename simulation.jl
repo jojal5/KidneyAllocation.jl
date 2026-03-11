@@ -51,7 +51,7 @@ for g in G
     end
 end
 
-initial = [recipient_registry_by_can_id[i] for i in active_can_id]
+initial = [recipient_by_CAN_ID[i] for i in active_can_id]
 
 
 ## Generate recipient arrivals for the next nyears
@@ -65,11 +65,11 @@ nᵣ = rand(Poisson(recipient_arrival_rate * 10))
 # Arrival dates                             
 tᵣ = KidneyAllocation.sample_days(Date(2014, 1, 1), Date(2023, 12, 31), nᵣ)
 # Sampled CAN_ID
-sampled_can_id = rand(keys(recipient_registry_by_can_id), nᵣ)
+sampled_can_id = rand(keys(recipient_by_CAN_ID), nᵣ)
 # Sampled recipients with the adjusted timeline 
 new_recipients = Vector{Recipient}(undef, nᵣ)
 for (i,id) in enumerate(sampled_can_id)
-    sampled_recipient = recipient_registry_by_can_id[id]
+    sampled_recipient = recipient_by_CAN_ID[id]
     new_recipients[i] = shift_recipient_timeline(sampled_recipient, tᵣ[i])
 end
 
@@ -101,23 +101,8 @@ donor_arrival_rate = n/6
 
 ## Build donor registry by DON_ID
 
-import KidneyAllocation: donor_from_row
 
-donor_registry_by_don_id = Dict{Int, Donor}()
-
-for g in G
-    r = first(g)
-    donor_registry_by_don_id[r.DON_ID] = donor_from_row(r)
-end
-
-
-
-
-
-
-
-
-import KidneyAllocation: kidneys_given_by_donor
+donor_by_don_id = KidneyAllocation.build_donor_registry(donor_filepath)
 
 
 ## Load decision model
