@@ -55,7 +55,7 @@ features = Symbol.([
     "is_bloodtype_AB"])
 
 m = DecisionTreeClassifier(
-    max_depth=15, min_samples_leaf=50,
+    max_depth=5, min_samples_leaf=75,
     pruning_purity_threshold=1
 )
 
@@ -108,7 +108,7 @@ features = Symbol.([
     "is_bloodtype_AB"])
 
 m = DecisionTreeClassifier(
-    max_depth=10, min_samples_leaf=125,
+    max_depth=5, min_samples_leaf=75,
     pruning_purity_threshold=1
 )
 
@@ -117,7 +117,8 @@ y = data.DECISION
 
 DecisionTree.fit!(m, X, y)
 
-u = fit_threshold_prevalence(data.DECISION, DecisionTree.predict_proba(m, X)[:,2])
+# u = fit_threshold_prevalence(data.DECISION, DecisionTree.predict_proba(m, X)[:,2])
+u = fit_threshold_f1(data.DECISION, DecisionTree.predict_proba(m, X)[:,2])
 
 dm = TreeDecisionModel(m, features, u)
 

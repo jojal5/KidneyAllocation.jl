@@ -134,7 +134,7 @@ end
 
 import KidneyAllocation: is_active, is_abo_compatible, allocate_one_donor
 
-donor = donors[3]
+donor = donors[100]
 arrival = donor.arrival
 
 eligible_mask = is_active.(waiting_recipients, arrival) .&& is_abo_compatible.(donor, waiting_recipients)
@@ -159,23 +159,24 @@ import KidneyAllocation.allocate
 
 @time ind = allocate(donors, waiting_recipients, dm)
 
-# TODO: Bcp trop d'offres non attribuées. Changer le modèle de décision.
+# TODO: Bcp trop d'offres non acceptées. Changer le modèle de décision.
 count(ind .== 0)
 
 
 # Sanity checks
-KidneyAllocation.score(new_donors[100], waiting_recipients[ind[100]])
-KidneyAllocation.acceptance_probability(dm, waiting_recipients[ind[100]], new_donors[100])
-KidneyAllocation.decide(dm, waiting_recipients[ind[100]], new_donors[100])
+idx = 1000
+KidneyAllocation.score(donors[idx], waiting_recipients[ind[idx]])
+KidneyAllocation.acceptance_probability(dm, waiting_recipients[ind[idx]], donors[idx])
+KidneyAllocation.decide(dm, waiting_recipients[ind[idx]], donors[idx])
 
-@time ind = allocate(new_donors, waiting_recipients, dm, until = 1)
-
-findlast(ind .!= 0)
-
+@time ind = KidneyAllocation.allocate_until_next_offer(donors, waiting_recipients, dm, 100)
 
 
+@time ind = KidneyAllocation.allocate_until_transplant(donors, waiting_recipients, dm, 100)
 
-findfirst(ind .== 0)
+
+
+
 
 
 
