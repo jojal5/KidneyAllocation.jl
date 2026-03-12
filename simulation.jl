@@ -134,7 +134,7 @@ end
 
 import KidneyAllocation: is_active, is_abo_compatible, allocate_one_donor
 
-donor = donors[1]
+donor = donors[3]
 arrival = donor.arrival
 
 eligible_mask = is_active.(waiting_recipients, arrival) .&& is_abo_compatible.(donor, waiting_recipients)
@@ -142,7 +142,7 @@ eligible_index = findall(eligible_mask)
 
 ranked_indices = KidneyAllocation.rank_eligible_indices_by_score(donor,waiting_recipients, eligible_index )
 
-@time KidneyAllocation.acceptance_probability(dm, waiting_recipients[ranked_indices], donor)
+@time p= KidneyAllocation.acceptance_probability(dm, waiting_recipients[ranked_indices], donor)
 
 @time chosen_index = allocate_one_donor(donor, waiting_recipients[ranked_indices], dm)
 
@@ -159,39 +159,25 @@ import KidneyAllocation.allocate
 
 @time ind = allocate(donors, waiting_recipients, dm)
 
-
-is_unallocated = trues(length(waiting_recipients))                 
-allocated_recipient_index = zeros(Int64,length(donors))
-
-    for donor_idx in eachindex(donors)
-        println(donor_idx)
-        donor = donors[donor_idx]
-
-        allocated_recipient_index[donor_idx] = allocate_one_donor(donor, waiting_recipients, dm, is_unallocated)
-
-        if allocated_recipient_index[donor_idx] != 0
-            is_unallocated[allocated_recipient_index[donor_idx]] = false
-        end
-    end
-
-
-donor_idx = 14
-donor = donors[donor_idx]
-
-eligible_indices = KidneyAllocation.get_eligible_recipient_indices(donor, waiting_recipients, is_unallocated)
-
-ind = KidneyAllocation.is_abo_compatible.(donor, waiting_recipients)
-count(ind)
+# TODO: Bcp trop d'offres non attribuées. Changer le modèle de décision.
+count(ind .== 0)
 
 
 # Sanity checks
-score(new_donors[100], waiting_recipients[ind[100]])
+KidneyAllocation.score(new_donors[100], waiting_recipients[ind[100]])
 KidneyAllocation.acceptance_probability(dm, waiting_recipients[ind[100]], new_donors[100])
 KidneyAllocation.decide(dm, waiting_recipients[ind[100]], new_donors[100])
 
 @time ind = allocate(new_donors, waiting_recipients, dm, until = 1)
 
 findlast(ind .!= 0)
+
+
+
+
+findfirst(ind .== 0)
+
+
 
 
 
