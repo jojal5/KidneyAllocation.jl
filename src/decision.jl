@@ -144,7 +144,7 @@ function build_decision_dataset(donors_filepath::String, recipients_filepath::St
     data.DECISION = data.DECISION .== "Acceptation"
     data.LEARNING_SET = learning_set
 
-    select!(data, [:DON_AGE, :KDRI, :CAN_AGE, :CAN_WAIT, :CAN_BLOOD, :MISMATCH, :CPRA, :DECISION, :LEARNING_SET])
+    select!(data, [:DON_AGE, :KDRI, :CAN_AGE, :CAN_WAIT, :CAN_BLOOD, :MISMATCH, :CPRA, :DON_CAN_SCORE, :DECISION, :LEARNING_SET])
 
     return data
 end
