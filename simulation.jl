@@ -160,19 +160,65 @@ import KidneyAllocation.allocate
 @time ind = allocate(donors, waiting_recipients, dm)
 
 # TODO: Bcp trop d'offres non acceptées. Changer le modèle de décision.
+# TODO: Add the recipient CPRA in the decision model
 count(ind .== 0)
 
 
 # Sanity checks
-idx = 1000
+idx = 1
 KidneyAllocation.score(donors[idx], waiting_recipients[ind[idx]])
 KidneyAllocation.acceptance_probability(dm, waiting_recipients[ind[idx]], donors[idx])
 KidneyAllocation.decide(dm, waiting_recipients[ind[idx]], donors[idx])
 
 @time ind = KidneyAllocation.allocate_until_next_offer(donors, waiting_recipients, dm, 100)
 
-
 @time ind = KidneyAllocation.allocate_until_transplant(donors, waiting_recipients, dm, 100)
+
+@time ind = allocate(donors, waiting_recipients, dm)
+non_allocated = setdiff( eachindex(waiting_recipients), ind)
+count(is_active.(waiting_recipients[non_allocated], Date(2020,1,1)))
+
+
+
+
+pushfirst!(waiting_recipients, waiting_recipients[1]) # To be replaced by the target recipient
+
+# 15863 - 0.093 years ≈ 34 days
+r = Recipient(Date(1945,03,11),Date(1980,11,2),Date(2000,1,1), O,
+    29, 29, 44, 44, 7, 7,
+    0)
+r = KidneyAllocation.shift_recipient_timeline(r, Date(2014,1,1))
+
+waiting_recipients[1] = r
+
+ind = KidneyAllocation.allocate_until_transplant(donors, waiting_recipients, dm, 1)
+donors[ind].arrival - waiting_recipients[1].arrival 
+
+
+# 15472 - 0.063 years ≈ 23 days
+r = Recipient(Date(1931,09,17),Date(1999,10,14),Date(2000,1,1), O,
+    1, 2, 35, 61, 103, 13,
+    0)
+r = shift_recipient_timeline(r, Date(2014,1,1))
+
+waiting_recipients[1] = r
+ind = KidneyAllocation.allocate_until_transplant(donors, waiting_recipients, dm, 1)
+donors[ind].arrival - waiting_recipients[1].arrival
+
+
+# 6072 - 891 days before TX 
+r = recipient_by_CAN_ID[6072]
+r = KidneyAllocation.shift_recipient_timeline(r, Date(2014,1,1))
+
+waiting_recipients[1] = r
+ind = KidneyAllocation.allocate_until_transplant(donors, waiting_recipients, dm, 1)
+donors[ind].arrival - waiting_recipients[1].arrival
+
+
+
+
+
+
 
 
 

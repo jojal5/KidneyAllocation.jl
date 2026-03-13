@@ -12,8 +12,9 @@ import KidneyAllocation: build_decision_dataset, fit_threshold_f1, fit_threshold
 
 recipients_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Candidates.csv"
 donors_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Donors.csv"
+cpra_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/CandidatesCPRA.csv"
 
-data = build_decision_dataset(donors_filepath, recipients_filepath)
+data = build_decision_dataset(donors_filepath, recipients_filepath, cpra_filepath)
 
 data_train = filter(row -> row.LEARNING_SET == "train", data)
 data_validation = filter(row -> row.LEARNING_SET == "validation", data)
