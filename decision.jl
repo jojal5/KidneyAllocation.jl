@@ -21,8 +21,8 @@ data_validation = filter(row -> row.LEARNING_SET == "validation", data)
 
 
 ## Fit decison model based on GLM on the train set
-# model = @formula(DECISION ~ log(KDRI) + CAN_AGE * KDRI * CAN_WAIT + CAN_AGE^2 * KDRI * CAN_WAIT^2 + CAN_BLOOD + DON_AGE)
-model = @formula(DECISION ~ log(KDRI) + CAN_BLOOD + CAN_WAIT + CAN_WAIT^2 + CPRA + CPRA^2 + DON_CAN_SCORE)
+# model = @formula(DECISION ~ log(KDRI) + CAN_AGE * KDRI * CAN_WAIT + CAN_AGE^2 * KDRI * CAN_WAIT^2 + CAN_BLOOD + CPRA + DON_CAN_SCORE)
+model = @formula(DECISION ~ log(KDRI) + CAN_BLOOD + CAN_WAIT + CAN_WAIT^2 + CPRA + CPRA^2 + CAN_AGE + CAN_AGE^2 + DON_CAN_SCORE)
 
 fm = glm(model, data_train, Bernoulli(), LogitLink())
 
@@ -58,7 +58,7 @@ features = Symbol.([
     "is_bloodtype_AB"])
 
 m = DecisionTreeClassifier(
-    max_depth=10, min_samples_leaf=50,
+    max_depth=10, min_samples_leaf=75,
     pruning_purity_threshold=1
 )
 
@@ -88,10 +88,10 @@ brier_score(gt, p)
 
 ## Refit the GLM model on all the data and save it for later use
 
-model = @formula(DECISION ~ log(KDRI) + CAN_AGE * KDRI * CAN_WAIT + CAN_AGE^2 * KDRI * CAN_WAIT^2 + CAN_BLOOD + DON_AGE)
+model = @formula(DECISION ~ log(KDRI) + CAN_BLOOD + CAN_WAIT + CAN_WAIT^2 + CPRA + CPRA^2 + CAN_AGE + CAN_AGE^2 + DON_CAN_SCORE)
 fm = glm(model, data, Bernoulli(), LogitLink())
 
-u = fit_threshold_prevalence(data.DECISION, GLM.predict(fm))
+u = fit_threshold_f1(data.DECISION, GLM.predict(fm))
 
 dm = GLMDecisionModel(fm, u)
 
@@ -105,13 +105,15 @@ features = Symbol.([
     "CAN_AGE"
     "CAN_WAIT"
     "MISMATCH"
+    "CPRA"
+    "DON_CAN_SCORE"
     "is_bloodtype_O"
     "is_bloodtype_A"
     "is_bloodtype_B"
     "is_bloodtype_AB"])
 
 m = DecisionTreeClassifier(
-    max_depth=5, min_samples_leaf=75,
+    max_depth=10, min_samples_leaf=75,
     pruning_purity_threshold=1
 )
 
