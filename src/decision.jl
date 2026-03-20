@@ -51,10 +51,11 @@ A `DataFrame` with columns
 # Notes
 The train/validation split is performed at the donor level.
 """
-function build_decision_dataset(donors_filepath::String, recipients_filepath::String)
+function build_decision_dataset(donors_filepath::String, recipients_filepath::String, cpra_filepath::String)
 
     df_donors = load_donor(donors_filepath)
     df_recipients = load_recipient(recipients_filepath)
+    cpra_by_can_id = build_last_cpra_registry(cpra_filepath)
 
     filter!(row -> year(row.DON_DEATH_TM) in 2014:2019, df_donors)
 
@@ -107,6 +108,7 @@ function build_decision_dataset(donors_filepath::String, recipients_filepath::St
     waittime = Float64[]
     blood = String[]
     n_mismatch = Int[]
+    cpra = Int[]
     learning_set = String[]
 
     don_id = unique(data.DON_ID)
@@ -130,6 +132,7 @@ function build_decision_dataset(donors_filepath::String, recipients_filepath::St
         push!(waittime, waittime_r)
         push!(blood, blood_r)
         push!(n_mismatch, n)
+        push!(cpra, get(cpra_by_can_id, r.CAN_ID, 0))
         push!(learning_set, r.DON_ID in train_id ? "train" : "validation")
     end
 
@@ -137,10 +140,11 @@ function build_decision_dataset(donors_filepath::String, recipients_filepath::St
     data.CAN_WAIT = waittime
     data.CAN_BLOOD = blood
     data.MISMATCH = n_mismatch
+    data.CPRA = cpra
     data.DECISION = data.DECISION .== "Acceptation"
     data.LEARNING_SET = learning_set
 
-    select!(data, [:DON_AGE, :KDRI, :CAN_AGE, :CAN_WAIT, :CAN_BLOOD, :MISMATCH, :DECISION, :LEARNING_SET])
+    select!(data, [:DON_AGE, :KDRI, :CAN_AGE, :CAN_WAIT, :CAN_BLOOD, :MISMATCH, :CPRA, :DON_CAN_SCORE, :DECISION, :LEARNING_SET])
 
     return data
 end

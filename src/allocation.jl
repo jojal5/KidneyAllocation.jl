@@ -12,9 +12,13 @@ function allocate_one_donor(
     is_unallocated::BitVector=trues(length(recipients))
 )
     eligible_indices = get_eligible_recipient_indices(donor, recipients, is_unallocated)
-    ranked_indices = rank_eligible_indices_by_score(donor, recipients, eligible_indices)
 
-    return allocate_one_donor(donor, recipients, dm, ranked_indices)
+    if isempty(eligible_indices) # No eligible recipient
+        return 0
+    else
+        ranked_indices = rank_eligible_indices_by_score(donor, recipients, eligible_indices)
+        return allocate_one_donor(donor, recipients, dm, ranked_indices)
+    end
 
 end
 
@@ -136,10 +140,15 @@ function allocate_until_next_offer(
     for donor_idx in eachindex(donors)
         donor = donors[donor_idx]
 
+        #TODO: I do not like this repetition of code from allocate_one_donor. Maybe find a more elegant formulation
         eligible_indices = get_eligible_recipient_indices(donor, recipients, is_unallocated)
         ranked_indices = rank_eligible_indices_by_score(donor, recipients, eligible_indices)
 
-        allocated_recipient_index = allocate_one_donor(donor, recipients, dm, ranked_indices)
+        if isempty(ranked_indices)
+            allocated_recipient_index = 0
+        else
+            allocated_recipient_index = allocate_one_donor(donor, recipients, dm, ranked_indices)
+        end
 
         # check whether ind would be offered before acceptance (or no acceptance)
         pos_ind = findfirst(==(ind), ranked_indices)

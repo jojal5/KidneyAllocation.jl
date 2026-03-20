@@ -5,19 +5,6 @@ using CSV, DataFrames, Dates, JLD2, Random, Test
 
 using KidneyAllocation
 
-import KidneyAllocation: reconstruct_recipients, build_recipient_registry, load_recipient, build_donor_registry, recipient_arrival_departure, build_last_cpra_registry
-import KidneyAllocation: infer_recipient_expiration_date, recipient_from_row
-
-recipient_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Candidates.csv"
-cpra_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/CandidatesCPRA.csv"
-donor_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Donors.csv"
-
-recipients = build_recipient_registry(recipient_filepath, cpra_filepath)
-donors = build_donor_registry(donor_filepath)
-
-
-
-
 
 """
     indices_in_registry(recipients, registry) -> Vector{Int}
@@ -147,64 +134,6 @@ can_ids = active_recipient_ids(recipient_filepath, Date(2014, 1, 1,))
 r = recipients_from_can_ids(recipient_filepath, cpra_filepath, can_ids)
 
 r = get_active_recipients(recipient_filepath, cpra_filepath, Date(2014, 1, 1))
-
-
-
-## Simulation of the allocation process
-
-
-
-
-
-
-
-
-function infer_recipient_departure(df::AbstractDataFrame, future_date=Date(2100, 1, 1))
-
-    @assert "OUTCOME" in names(df) "Missing column :OUTCOME"
-    @assert "UPDATE_TM" in names(df) "Missing column :UPDATE_TM"
-    @assert all(==(df.CAN_ID[1]), df.CAN_ID) "All rows must correspond to the same :CAN_ID"
-
-    # Sort the dataframe rows so that the most recent is on top
-    idx = sortperm(df.UPDATE_TM; rev=true)
-    outcomes = df.OUTCOME[idx]
-    updates = df.UPDATE_TM[idx]
-
-    if outcomes[1] == "1"
-        departure = future_date # Arbitrary date after the end of the historic period
-    else
-        departure = updates[1] # Si transplanté ou retiré
-    end
-
-    return departure
-
-end
-
-
-
-
-df_recipient = load_recipient(recipient_filepath)
-
-G = groupby(df_recipient, :CAN_ID)
-
-infer_recipient_departure(G[1000])
-
-dep_by_id = Dict{Int,Date}()
-
-for g in G
-    id = g.CAN_ID[1]
-    dep = infer_recipient_departure(g)
-    dep_by_id[id] = dep
-end
-
-df_recipient.DEPARTURE_DT = getindex.(Ref(dep_by_id), df_recipient.CAN_ID)
-
-
-
-
-
-
-
 
 
 """
