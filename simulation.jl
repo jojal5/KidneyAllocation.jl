@@ -5,13 +5,12 @@ using Dates, CSV, DataFrames, Distributions, JLD2, Random
 
 using KidneyAllocation
 
-## Estimation recipient arrival rate
+## Estimation of the recipient arrival rate
 
 import KidneyAllocation.load_recipient
 
 recipient_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Candidates.csv"
 cpra_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/CandidatesCPRA.csv"
-# recipients = build_recipient_registry(recipient_filepath, cpra_filepath)
 
 df_recipient = load_recipient(recipient_filepath)
 select!(df_recipient, Not(:NB_PAST_TRANS))
@@ -41,7 +40,6 @@ origin = Date(2014,1,1)
 
 G = groupby(df_recipient, :CAN_ID)
 
-origin = Date(2014,1,1)
 active_can_id = Int[]
 
 for g in G
@@ -63,7 +61,7 @@ nyears = 10
 # Number of recipients
 nᵣ = rand(Poisson(recipient_arrival_rate * nyears)) 
 # Arrival dates                             
-tᵣ = KidneyAllocation.sample_days(Date(2014, 1, 1), Date(2023, 12, 31), nᵣ)
+tᵣ = KidneyAllocation.sample_days(origin, origin + Year(nyears), nᵣ)
 # Sampled CAN_ID
 sampled_can_id = rand(keys(recipient_by_CAN_ID), nᵣ)
 # Sampled recipients with the adjusted timeline 
@@ -108,7 +106,7 @@ donor_by_don_id = KidneyAllocation.build_donor_registry(donor_filepath)
 # Number of recipients
 nₒ = rand(Poisson(donor_arrival_rate * nyears)) 
 # Arrival dates                             
-tₒ = KidneyAllocation.sample_days(Date(2014, 1, 1), Date(2023, 12, 31), nₒ)
+tₒ = KidneyAllocation.sample_days(origin, origin + Year(nyears), nₒ)
 # Sampled DON_ID
 sampled_don_id = rand(keys(donor_by_don_id), nₒ)
 
@@ -159,27 +157,24 @@ import KidneyAllocation.allocate
 
 @time ind = allocate(donors, waiting_recipients, dm)
 
-# TODO: Bcp trop d'offres non acceptées. Changer le modèle de décision.
-# TODO: Add the recipient CPRA in the decision model
+# TODO: Bcp trop d'offres non acceptées. Changer le modèle de décision ou bien forcer les candidats à les accepter. 
 count(ind .== 0)
 
 
-# Sanity checks
-idx = 1
+# Sanity checks - does not work if ind[idx] == 0, i.e. if the kidney is not attributed
+idx = 1000
 KidneyAllocation.score(donors[idx], waiting_recipients[ind[idx]])
 KidneyAllocation.acceptance_probability(dm, waiting_recipients[ind[idx]], donors[idx])
 KidneyAllocation.decide(dm, waiting_recipients[ind[idx]], donors[idx])
 
 @time ind = KidneyAllocation.allocate_until_next_offer(donors, waiting_recipients, dm, 100)
 
+
 @time ind = KidneyAllocation.allocate_until_transplant(donors, waiting_recipients, dm, 100)
 
-@time ind = allocate(donors, waiting_recipients, dm)
-non_allocated = setdiff( eachindex(waiting_recipients), ind)
-count(is_active.(waiting_recipients[non_allocated], Date(2020,1,1)))
 
 
-
+# TODO - verify the time before transplant and first offer using real recipients
 
 pushfirst!(waiting_recipients, waiting_recipients[1]) # To be replaced by the target recipient
 
@@ -216,78 +211,3 @@ donors[ind].arrival - waiting_recipients[1].arrival
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-import KidneyAllocation: generate_arrivals, reconstruct_donors, reconstruct_recipients, simulate_initial_state_indexed
-
-@time ind, d = generate_arrivals(eachindex(recipients), 100)
-@time r = recipients[ind]
-@time shift_recipient_timeline.(r, d)
-@time reconstruct_recipients(recipients, ind, d)
-
-@time ind, d = generate_arrivals(eachindex(donors), 100)
-@time r = donors[ind]
-@time set_donor_arrival.(r, d)
-@time reconstruct_donors(donors, ind, d)
-
-@time ind, d = simulate_initial_state_indexed(recipients, donors, fm, u)
-reconstruct_recipients(recipients, ind, d)
-
-# 15863 - 0.093 years
-r = Recipient(Date(1945,03,11),Date(1980,11,2),Date(2000,1,1), O,
-    29, 29, 44, 44, 7, 7,
-    0)
-# r = shift_recipient_timeline(r, Date(2000,1,1))
-
-
-# 15472 - 0.063 years
-r = Recipient(Date(1931,09,17),Date(1999,10,14),Date(2000,1,1), O,
-    1, 2, 35, 61, 103, 13,
-    0)
-# r = shift_recipient_timeline(r, Date(2000,1,1))
-
-
-@load "src/SyntheticData/initial_waiting_lists_indexed.jld2"
-
-waiting_time = Vector{Float64}(undef, 1000)
-
-# for iSim in 1:1
-for iSim in 1:length(waiting_indices)
-    arrival_dates = origin_date .+ Day.(waiting_day_offsets[iSim])
-
-    waiting_recipients = reconstruct_recipients(recipients, waiting_indices[iSim], arrival_dates)
-
-    ind, d = generate_arrivals(eachindex(recipients), λᵣ)
-    append!(waiting_recipients, reconstruct_recipients(recipients, ind, d))
-
-    ind, d = generate_arrivals(eachindex(donors), λₒ)
-    new_donors = reconstruct_donors(donors, ind, d)
-
-    # Add the recipient of interest
-    pushfirst!(waiting_recipients, r)
-
-    ind = allocate(waiting_recipients, new_donors, fm, u; until=1)
-    ind[findlast(ind .!= 0)]
-
-    waiting_time[iSim] = fractionalyears_between(Date(2000,1,1), new_donors[findlast(ind .!= 0)].arrival)
-
-end
-
-# using Gadfly
-
-plot(y=waiting_time, Geom.boxplot)
