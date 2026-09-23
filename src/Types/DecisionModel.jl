@@ -113,7 +113,8 @@ function decide(dm::M, recipients::Vector{Recipient}, donor::Donor) where M<:Abs
     
     p = acceptance_probability(dm, recipients, donor)
 
-    acceptation = p .> dm.threshold
+    # acceptation = p .> dm.threshold
+    acceptation = p .> rand(length(p))
 
     return acceptation
 
