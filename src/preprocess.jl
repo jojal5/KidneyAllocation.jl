@@ -100,10 +100,8 @@ as the departure date.
 """
 function recipient_arrival_departure(df::AbstractDataFrame, future_date::Date=Date(2100, 1, 1))
 
-    @assert "OUTCOME" in names(df) "Missing column :OUTCOME"
-    @assert "UPDATE_TM" in names(df) "Missing column :UPDATE_TM"
-    @assert "CAN_LISTING_DT" in names(df) "Missing column :CAN_LISTING_DT"
-    @assert all(==(df.CAN_ID[1]), df.CAN_ID) "All rows must correspond to the same :CAN_ID"
+    check_df_columns(df, :CAN_ID, :OUTCOME, :UPDATE_TM, :CAN_LISTING_DT)
+    check_df_column_constant(df, :CAN_ID)
 
     # Sort the dataframe rows so that the most recent is on top
     idx = sortperm(df.UPDATE_TM; rev=true)
@@ -137,17 +135,11 @@ Exit outcomes are `"X"`, `"TX VIVANT"`, `"DCD"`, and `"TX"`, matched
 case-insensitively. The exit record itself is retained.
 """
 function filter_outcomes(df::AbstractDataFrame)::DataFrame
-    for col in (:CAN_ID, :OUTCOME, :UPDATE_TM)
-        col ∈ propertynames(df) ||
-            throw(ArgumentError("Missing column :$col"))
-        any(ismissing, df[!, col]) &&
-            throw(ArgumentError("Column :$col contains missing values"))
-    end
+
+    check_df_columns(df, :CAN_ID, :OUTCOME, :UPDATE_TM)
+    check_df_column_constant(df, :CAN_ID)
 
     isempty(df) && return DataFrame(df)
-
-    all(==(first(df.CAN_ID)), df.CAN_ID) ||
-        throw(ArgumentError("All rows must correspond to the same :CAN_ID"))
 
     exit_outcomes = ("X", "TX VIVANT", "DCD", "TX")
     earliest_exit_date = nothing

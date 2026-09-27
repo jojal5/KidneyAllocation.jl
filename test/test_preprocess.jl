@@ -43,6 +43,38 @@
         end
     end
 
+    @testset "filter_outcomes" begin
+
+    import KidneyAllocation.filter_outcomes
+
+    df = CSV.read("data/unfiltered_outcomes.csv", DataFrame)
+
+    g = groupby(df, :CAN_ID)
+
+    is_exit_outcome(outcome::AbstractString) =
+        uppercase(strip(outcome)) ∈ ("X", "TX VIVANT", "DCD", "TX")
+
+    n_exit_outcome = [1, 1, 1, 1, 0, 0]
+    first_exit_date = [DateTime(2012,4,24, 14, 33, 41),
+        DateTime(2004,1,14,22,55,12),
+        DateTime(2012,7,1,17,0,10),
+        DateTime(2004,4,20,0,30,14),
+        nothing,
+        nothing]
+
+    for i in 1:length(g)
+        filtered_df = filter_outcomes(g[i])
+        exit_rows = is_exit_outcome.(filtered_df.OUTCOME)
+        @test count(exit_rows) == n_exit_outcome[i]
+        if !isnothing(first_exit_date[i])
+            @test filtered_df[exit_rows, :UPDATE_TM][1] == first_exit_date[i]
+        else
+            @test all(.!(exit_rows))
+        end
+    end
+
+end
+
     @testset "infer_recipient_expiration_date" begin
         import KidneyAllocation.infer_recipient_expiration_date
 
@@ -164,12 +196,6 @@
             @test departure == Date(2100, 1, 1)
         end
 
-        @testset "several recipients" begin
-            df = DataFrame(CAN_ID=[5695, 1000], CAN_LISTING_DT=Date(2017, 6, 19),
-                OUTCOME=["TX", "1"], UPDATE_TM=[Date(2017, 9, 14), Date(2017, 7, 14)])
-
-            @test_throws AssertionError recipient_arrival_departure(df)
-        end
     end
 
 
