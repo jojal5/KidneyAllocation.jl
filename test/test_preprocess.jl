@@ -13,17 +13,49 @@
 
     end
 
+    @testset "check dataframe columns" begin
+
+        import KidneyAllocation: check_df_columns, check_df_column_constant
+        df = CSV.read("data/filtered_outcomes.csv", DataFrame)
+
+        @testset "check_df_columns" begin
+            @test check_df_columns(df, :CAN_ID, :UPDATE_TM, :OUTCOME) === nothing
+
+            df2 = similar(df, 0)
+            @test check_df_columns(df2, :CAN_ID, :UPDATE_TM, :OUTCOME) === nothing
+
+            @test_throws ArgumentError check_df_columns(df, :INEXISTENT)
+
+            df3 = df[1:2, :]
+            allowmissing!(df3, 2)
+            df3[1, 2] = missing
+
+            @test_throws ArgumentError check_df_columns(df3, :CAN_ID, :UPDATE_TM, :OUTCOME)
+        end
+
+        @testset "check_df_column_constant" begin
+
+            @test_throws ArgumentError check_df_column_constant(df, :CAN_ID)
+
+            g = groupby(df, :CAN_ID)
+            @test check_df_column_constant(g[1], :CAN_ID) === nothing
+
+        end
+    end
+
     @testset "infer_recipient_expiration_date" begin
         import KidneyAllocation.infer_recipient_expiration_date
 
-        df = CSV.read("data/expiration_date.csv", DataFrame)
+        df = CSV.read("data/filtered_outcomes.csv", DataFrame)
 
         g = groupby(df, :CAN_ID)
 
         @test infer_recipient_expiration_date(g[1]) === nothing
-        @test infer_recipient_expiration_date(g[2]) == Date(2012, 2, 22)
+        @test infer_recipient_expiration_date(g[2]) === nothing
         @test infer_recipient_expiration_date(g[3]) === nothing
-        @test infer_recipient_expiration_date(g[4]) == Date(2008, 3, 6)
+        @test infer_recipient_expiration_date(g[4]) == DateTime(2004,04,20,0,30,14)
+        @test infer_recipient_expiration_date(g[5]) === nothing
+        @test infer_recipient_expiration_date(g[6]) === nothing
 
     end
 

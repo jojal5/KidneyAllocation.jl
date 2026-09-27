@@ -21,43 +21,74 @@ function parse_hla_int(s::Union{AbstractString,Missing})::Union{Int64,Missing}
 end
 
 """
+    check_df_columns(df::AbstractDataFrame, cols::Symbol...) -> Nothing
+
+Verify that `df` contains every column in `cols` and that none contains `missing`. Throw an `ArgumentError` otherwise.
+"""
+function check_df_columns(df::AbstractDataFrame, cols::Symbol...)
+    available_cols = propertynames(df)
+
+    for col in cols
+        col ∈ available_cols ||
+            throw(ArgumentError("Missing column :$col"))
+
+        any(ismissing, df[!, col]) &&
+            throw(ArgumentError("Column :$col contains missing values"))
+    end
+
+    return nothing
+end
+
+"""
+    check_df_column_constant(df::AbstractDataFrame, col::Symbol) -> Nothing
+
+Verify that all values in column `col` are identical. Throw an `ArgumentError` otherwise.
+"""
+function check_df_column_constant(df::AbstractDataFrame, col::Symbol)
+    check_df_columns(df, col)
+
+    isempty(df) && return nothing
+
+    values = df[!, col]
+
+    all(==(first(values)), values) ||
+        throw(ArgumentError(
+            "All rows must have the same value in column :$col",
+        ))
+
+    return nothing
+end
+
+"""
     infer_recipient_expiration_date(df::AbstractDataFrame) -> Union{Date,Nothing}
 
-Infer the expiration date for a single recipient from their longitudinal status history.
+Return the earliest recorded exit date for a single recipient.
 
-### Details
-The input `df` must correspond to a single recipient (`CAN_ID`) and contain
-at least the columns `:OUTCOME` and `:UPDATE_TM`.
+`df` must contain the columns `:CAN_ID`, `:OUTCOME`, and `:UPDATE_TM`;
+all rows must belong to the same recipient. `:UPDATE_TM` must contain
+`Date` or `DateTime` values without missing entries.
 
-The history is sorted internally by `:UPDATE_TM` in descending order
-(most recent first).
+Outcome codes are matched case-insensitively. A permanent exit status is `"X"`,
+`"TX VIVANT"`, or `"DCD"`.
 
-Rules (case-insensitive):
-- If the most recent outcome is `"TX"` or `"1"`, return `nothing`.
-- Otherwise:
-  - If `"1"` never occurs in the history, return the oldest `UPDATE_TM`.
-  - If `"1"` occurs but is not the most recent status, return the `UPDATE_TM`
-    immediately preceding the first `"1"` in the descending timeline.
+Return `nothing` if no permanent exit status is recorded.
 """
-function infer_recipient_expiration_date(df::AbstractDataFrame)::Union{Date,Nothing}
-    @assert "OUTCOME" in names(df) "Missing column :OUTCOME"
-    @assert "UPDATE_TM" in names(df) "Missing column :UPDATE_TM"
+function infer_recipient_expiration_date(df::AbstractDataFrame)::Union{DateTime,Nothing}
 
-    # Sort the dataframe lines so that the most recent is on top
-    idx = sortperm(df.UPDATE_TM; rev=true)
-    outcomes = uppercase.(String.(df.OUTCOME[idx]))
-    updates = df.UPDATE_TM[idx]
+    check_df_columns(df, :CAN_ID, :OUTCOME, :UPDATE_TM)
+    check_df_column_constant(df, :CAN_ID)
+    
+    isempty(df) && return nothing
 
-    if outcomes[1] == "TX" || outcomes[1] == "1" # If the recipient has been transplanted or still active, then there is no expiration date.
-        return nothing
-    else
-        ind_active = findfirst(==("1"), outcomes)
-        if ind_active === nothing # Recipient was never active
-            return updates[end]   # oldest date
-        else
-            return updates[ind_active-1] # # Si non transplanté avec un donneur décédé, on prend la dernière date d'attente active pour calculer la date d'expiration
-        end
+    exit_outcomes = ("X", "TX VIVANT", "DCD")
+    exit_dates = DateTime[]
+
+    for row in eachrow(df)
+        outcome = uppercase(strip(string(row.OUTCOME)))
+        outcome ∈ exit_outcomes && push!(exit_dates, row.UPDATE_TM)
     end
+
+    return isempty(exit_dates) ? nothing : minimum(exit_dates)
 end
 
 """
@@ -88,6 +119,56 @@ function recipient_arrival_departure(df::AbstractDataFrame, future_date::Date=Da
     end
 
     return arrival, departure
+end
+
+"""
+    filter_outcomes(df::AbstractDataFrame) -> AbstractDataFrame
+
+Remove records after the first recorded exit from the waiting list for a
+single recipient.
+
+Some recipients are later re-listed after a first transplantation while
+retaining their original dialysis date. As the dialysis date for the later
+listing episode is unavailable, those records would yield an invalid waiting
+time. This function retains only records whose `UPDATE_TM` is on or before
+the earliest exit outcome.
+
+Exit outcomes are `"X"`, `"TX VIVANT"`, `"DCD"`, and `"TX"`, matched
+case-insensitively. The exit record itself is retained.
+"""
+function filter_outcomes(df::AbstractDataFrame)::DataFrame
+    for col in (:CAN_ID, :OUTCOME, :UPDATE_TM)
+        col ∈ propertynames(df) ||
+            throw(ArgumentError("Missing column :$col"))
+        any(ismissing, df[!, col]) &&
+            throw(ArgumentError("Column :$col contains missing values"))
+    end
+
+    isempty(df) && return DataFrame(df)
+
+    all(==(first(df.CAN_ID)), df.CAN_ID) ||
+        throw(ArgumentError("All rows must correspond to the same :CAN_ID"))
+
+    exit_outcomes = ("X", "TX VIVANT", "DCD", "TX")
+    earliest_exit_date = nothing
+
+    for row in eachrow(df)
+        outcome = uppercase(strip(string(row.OUTCOME)))
+
+        if outcome ∈ exit_outcomes
+            date = row.UPDATE_TM
+            earliest_exit_date = isnothing(earliest_exit_date) ?
+                date :
+                min(earliest_exit_date, date)
+        end
+    end
+
+    isnothing(earliest_exit_date) && return DataFrame(df)
+
+    return filter(
+        :UPDATE_TM => (date -> date ≤ earliest_exit_date),
+        df,
+    )
 end
 
 

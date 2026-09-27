@@ -6,6 +6,169 @@ using CSV, DataFrames, Dates, JLD2, Random, Test
 using KidneyAllocation
 
 
+# recipient_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Candidates.csv"
+
+# df = CSV.read(recipient_filepath, DataFrame)
+
+# filter!(row->row.CAN_ID in [1, 3, 4, 5, 21752, 21900], df)
+# select!(df, [:CAN_ID, :OUTCOME, :UPDATE_TM])
+# CSV.write("unfiltered_outcomes.csv", df)
+
+@testset "filter_outcomes" begin
+
+    import KidneyAllocation.filter_outcomes
+
+    df = CSV.read("test/data/unfiltered_outcomes.csv", DataFrame)
+
+    g = groupby(df, :CAN_ID)
+
+    is_exit_outcome(outcome::AbstractString) =
+        uppercase(strip(outcome)) ∈ ("X", "TX VIVANT", "DCD", "TX")
+
+    n_exit_outcome = [1, 1, 1, 1, 0, 0]
+    first_exit_date = [DateTime(2012,4,24, 14, 33, 41),
+        DateTime(2004,1,14,22,55,12),
+        DateTime(2012,7,1,17,0,10),
+        DateTime(2004,4,20,0,30,14),
+        nothing,
+        nothing]
+
+    for i in 1:length(g)
+        println(i)
+        filtered_df = filter_outcomes(g[i])
+        exit_rows = is_exit_outcome.(filtered_df.OUTCOME)
+        @test count(exit_rows) == n_exit_outcome[i]
+        if !isnothing(first_exit_date[i])
+            @test filtered_df[exit_rows, :UPDATE_TM][1] == first_exit_date[i]
+        else
+            @test all(.!(exit_rows))
+        end
+    end
+
+end
+
+
+# recipient_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Candidates.csv"
+
+# df = CSV.read(recipient_filepath, DataFrame)
+
+# filter!(row->row.CAN_ID in [1, 3, 4, 5, 21752, 21900], df)
+# select!(df, [:CAN_ID, :OUTCOME, :UPDATE_TM])
+
+# filtered_df = combine(groupby(df, :CAN_ID)) do recipient_df
+#     filter_outcomes(recipient_df)
+# end
+
+# CSV.write("filtered_outcomes.csv", filtered_df)
+
+@testset "infer_recipient_expiration_date" begin
+    import KidneyAllocation.infer_recipient_expiration_date
+
+    df = CSV.read("test/data/filtered_outcomes.csv", DataFrame)
+
+    g = groupby(df, :CAN_ID)
+
+        @test infer_recipient_expiration_date(g[1]) === nothing
+        @test infer_recipient_expiration_date(g[2]) === nothing
+        @test infer_recipient_expiration_date(g[3]) === nothing
+        @test infer_recipient_expiration_date(g[4]) == DateTime(2004,04,20,0,30,14)
+        @test infer_recipient_expiration_date(g[5]) === nothing
+        @test infer_recipient_expiration_date(g[6]) === nothing
+
+end
+
+
+
+
+function check_df_columns(df::AbstractDataFrame, cols::Symbol...)
+    available_cols = propertynames(df)
+
+    for col in cols
+        col ∈ available_cols ||
+            throw(ArgumentError("Missing column :$col"))
+
+        any(ismissing, df[!, col]) &&
+            throw(ArgumentError("Column :$col contains missing values"))
+    end
+
+    return nothing
+end
+
+function check_df_column_constant(df::AbstractDataFrame, col::Symbol)
+    check_df_columns(df, col)
+
+    isempty(df) && return nothing
+
+    values = df[!, col]
+
+    all(==(first(values)), values) ||
+        throw(ArgumentError(
+            "All rows must have the same value in column :$col",
+        ))
+
+    return nothing
+end
+
+# import KidneyAllocation.check_df_columns
+
+@testset "check_df_columns" begin
+    @test check_df_columns(df, :CAN_ID, :UPDATE_TM, :OUTCOME) === nothing
+
+    df2 = similar(df,0)
+    @test check_df_columns(df2, :CAN_ID, :UPDATE_TM, :OUTCOME) === nothing
+
+    @test_throws ArgumentError check_df_columns(df, :INEXISTENT)
+
+    df3 = df[1:2,:]
+    allowmissing!(df3, 2)
+    df3[1, 2] = missing
+
+    @test_throws ArgumentError check_df_columns(df3, :CAN_ID, :UPDATE_TM, :OUTCOME)
+end
+
+@testset "check_df_column_constant" begin
+    
+    @test_throws ArgumentError check_df_column_constant(df, :CAN_ID)
+
+    g = groupby(df, :CAN_ID)
+    @test check_df_column_constant(g[1], :CAN_ID) === nothing
+
+end
+
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 """
     indices_in_registry(recipients, registry) -> Vector{Int}
 
