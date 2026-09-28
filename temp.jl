@@ -11,40 +11,8 @@ using KidneyAllocation
 # df = CSV.read(recipient_filepath, DataFrame)
 
 # filter!(row->row.CAN_ID in [1, 3, 4, 5, 21752, 21900], df)
-# select!(df, [:CAN_ID, :OUTCOME, :UPDATE_TM])
+# select!(df, [:CAN_ID, :CAN_LISTING_DT, :CAN_DIAL_DT,:OUTCOME, :UPDATE_TM])
 # CSV.write("unfiltered_outcomes.csv", df)
-
-@testset "filter_outcomes" begin
-
-    import KidneyAllocation.filter_outcomes
-
-    df = CSV.read("test/data/unfiltered_outcomes.csv", DataFrame)
-
-    g = groupby(df, :CAN_ID)
-
-    is_exit_outcome(outcome::AbstractString) =
-        uppercase(strip(outcome)) ∈ ("X", "TX VIVANT", "DCD", "TX")
-
-    n_exit_outcome = [1, 1, 1, 1, 0, 0]
-    first_exit_date = [DateTime(2012,4,24, 14, 33, 41),
-        DateTime(2004,1,14,22,55,12),
-        DateTime(2012,7,1,17,0,10),
-        DateTime(2004,4,20,0,30,14),
-        nothing,
-        nothing]
-
-    for i in 1:length(g)
-        filtered_df = filter_outcomes(g[i])
-        exit_rows = is_exit_outcome.(filtered_df.OUTCOME)
-        @test count(exit_rows) == n_exit_outcome[i]
-        if !isnothing(first_exit_date[i])
-            @test filtered_df[exit_rows, :UPDATE_TM][1] == first_exit_date[i]
-        else
-            @test all(.!(exit_rows))
-        end
-    end
-
-end
 
 
 # recipient_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Candidates.csv"
@@ -52,23 +20,70 @@ end
 # df = CSV.read(recipient_filepath, DataFrame)
 
 # filter!(row->row.CAN_ID in [1, 3, 4, 5, 21752, 21900], df)
-# select!(df, [:CAN_ID, :OUTCOME, :UPDATE_TM])
+# select!(df, [:CAN_ID, :CAN_LISTING_DT, :OUTCOME, :UPDATE_TM])
 
 # filtered_df = combine(groupby(df, :CAN_ID)) do recipient_df
-#     filter_outcomes(recipient_df)
+#     KidneyAllocation.filter_outcomes(recipient_df)
 # end
 
 # CSV.write("filtered_outcomes.csv", filtered_df)
 
 
+df = CSV.read("test/data/unfiltered_outcomes.csv", DataFrame)
+
+import KidneyAllocation: check_df_columns, check_df_column_constant, filter_outcomes
+
+g = groupby(df, :CAN_ID)
+
+df = DataFrame(g[2])
+
+filter_outcomes(df)
 
 
 
-    
 
 
 
 
+
+
+
+
+
+
+
+df = CSV.read("test/data/filtered_outcomes.csv", DataFrame)
+
+g = groupby(df, :CAN_ID)
+
+df_recipient = sort(g[2], :UPDATE_TM)
+
+total_waiting = df_recipient.UPDATE_TM[end]- df_recipient.CAN_LISTING_DT[1]
+
+active_waiting = max(Millisecond(0), df_recipient.UPDATE_TM[1]- df_recipient.CAN_LISTING_DT[1])
+
+for i in nrow(df_recipient)
+    if df_recipient.OUTCOME[i] == 1
+        active_waiting += max(Millisecond(0), df_recipient.UPDATE_TM[i+1]- df_recipient.UPDATE_TM[i])
+    end
+end
+
+p = active_waiting / total_waiting
+
+
+
+
+
+sort!(df_filtered, :UPDATE_TM)
+
+n_active_waiting_days = filtered_df.[1]
+
+
+
+
+
+
+# test
 
 
 

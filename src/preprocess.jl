@@ -44,17 +44,19 @@ end
 
 Verify that all values in column `col` are identical. Throw an `ArgumentError` otherwise.
 """
-function check_df_column_constant(df::AbstractDataFrame, col::Symbol)
-    check_df_columns(df, col)
+function check_df_column_constant(df::AbstractDataFrame, cols::Symbol...)
 
     isempty(df) && return nothing
 
-    values = df[!, col]
-
-    all(==(first(values)), values) ||
-        throw(ArgumentError(
-            "All rows must have the same value in column :$col",
-        ))
+    for col in cols
+        check_df_columns(df, col)
+    
+        values = df[!, col]
+        all(==(first(values)), values) ||
+            throw(ArgumentError(
+                "All rows must have the same value in column :$col",
+            ))
+    end
 
     return nothing
 end
@@ -120,27 +122,28 @@ function recipient_arrival_departure(df::AbstractDataFrame, future_date::Date=Da
 end
 
 """
-    filter_outcomes(df::AbstractDataFrame) -> AbstractDataFrame
+    filter_outcomes(df::AbstractDataFrame) -> DataFrame
 
-Remove records after the first recorded exit from the waiting list for a
-single recipient.
+Return the records from the first waiting-list episode of a single recipient.
 
-Some recipients are later re-listed after a first transplantation while
-retaining their original dialysis date. As the dialysis date for the later
-listing episode is unavailable, those records would yield an invalid waiting
-time. This function retains only records whose `UPDATE_TM` is on or before
-the earliest exit outcome.
+Recipients may be re-listed after a previous exit while retaining their
+original dialysis date. Because the source file retains only the most recent
+listing date, records after the earliest exit outcome are removed.
+
+If all retained updates precede the recorded `CAN_LISTING_DT`, the listing
+date is replaced by `CAN_DIAL_DT`, which is used as a proxy for the lost
+original listing date.
 
 Exit outcomes are `"X"`, `"TX VIVANT"`, `"DCD"`, and `"TX"`, matched
 case-insensitively. The exit record itself is retained.
 """
 function filter_outcomes(df::AbstractDataFrame)::DataFrame
-
-    check_df_columns(df, :CAN_ID, :OUTCOME, :UPDATE_TM)
-    check_df_column_constant(df, :CAN_ID)
-
+    
     isempty(df) && return DataFrame(df)
-
+    
+    check_df_column_constant(df, :CAN_ID, :CAN_LISTING_DT, :CAN_LISTING_DT)
+    check_df_columns(df, :OUTCOME, :UPDATE_TM)
+    
     exit_outcomes = ("X", "TX VIVANT", "DCD", "TX")
     earliest_exit_date = nothing
 
@@ -157,10 +160,16 @@ function filter_outcomes(df::AbstractDataFrame)::DataFrame
 
     isnothing(earliest_exit_date) && return DataFrame(df)
 
-    return filter(
-        :UPDATE_TM => (date -> date ≤ earliest_exit_date),
-        df,
-    )
+    filtered_df = filter(:UPDATE_TM => (date -> date ≤ earliest_exit_date), df)
+
+    listing_date = first(filtered_df.CAN_LISTING_DT)
+    dialysis_date = convert(typeof(listing_date), first(filtered_df.CAN_DIAL_DT))
+
+    if maximum(filtered_df.UPDATE_TM) < listing_date
+        filtered_df.CAN_LISTING_DT .= dialysis_date
+    end
+
+    return filtered_df
 end
 
 
