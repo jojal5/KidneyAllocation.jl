@@ -34,6 +34,7 @@
     @test r.cpra == cpra
     @test r.blood == blood
     @test r.expiration_date === nothing
+    @test r.active_waiting_proportion ≈ 1.
 
     # --- Valid construction with explicit expiration_date ---
     exp_date = DateTime(2026, 1, 1)
@@ -71,6 +72,20 @@
         a1, a2, b1, b2,
         dr1, dr2,
         120)
+
+    # --- Invalid active waiting time ---
+    @test_throws ArgumentError Recipient(birth, dialysis, arrival,
+        blood,
+        a1, a2, b1, b2,
+        dr1, dr2,
+        0,
+        active_waiting_proportion = -1.)
+    @test_throws ArgumentError Recipient(birth, dialysis, arrival,
+        blood,
+        a1, a2, b1, b2,
+        dr1, dr2,
+        0,
+        active_waiting_proportion = 5.)
 
     # --- Invalid DR alleles ---
     @test_throws ArgumentError Recipient(birth, dialysis, arrival,

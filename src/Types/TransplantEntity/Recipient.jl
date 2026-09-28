@@ -14,6 +14,7 @@ Represents a recipient in the kidney transplantation system (internal use).
 - `dr1::HLA`, `dr2::HLA`: HLA-DR antigens.
 - `cpra::Int64`: Calculated Panel Reactive Antibody (0–100).
 - `expiration_date::Union{Date,Nothing}`: Eligibility expiration date, or `nothing`.
+- `active_waiting_proportion::Float64`: Fraction of the observed waiting period spent active, in `[0, 1]`.
 """
 struct Recipient <: TransplantEntity
     birth::Date
@@ -28,8 +29,10 @@ struct Recipient <: TransplantEntity
     dr2::HLA
     cpra::Int64
     expiration_date::Union{Date,Nothing}
+    active_waiting_proportion::Float64
 
-    function Recipient(birth::Date,
+    function Recipient(
+        birth::Date,
         dialysis::Date,
         arrival::Date,
         blood::ABOGroup,
@@ -37,7 +40,8 @@ struct Recipient <: TransplantEntity
         b1::HLA, b2::HLA,
         dr1::HLA, dr2::HLA,
         cpra::Int64;
-        expiration_date::Union{Date,Nothing}=nothing)
+        expiration_date::Union{Date,Nothing}=nothing,
+        active_waiting_proportion::Real=1.0)
 
         a1 ∈ VALID_HLA_A || throw(ArgumentError("Invalid A allele a1 = $a1"))
         a2 ∈ VALID_HLA_A || throw(ArgumentError("Invalid A allele a2 = $a2"))
@@ -48,9 +52,23 @@ struct Recipient <: TransplantEntity
 
         (0 <= cpra <= 100) || throw(ArgumentError("cpra must be in [0, 100], got $cpra"))
 
-        return new(birth, dialysis, arrival, blood,
+        proportion = Float64(active_waiting_proportion)
+
+        isfinite(proportion) ||
+            throw(ArgumentError(
+                "`active_waiting_proportion` must be finite, got $active_waiting_proportion",
+            ))
+
+        (0.0 <= proportion <= 1.0) ||
+            throw(ArgumentError(
+                "`active_waiting_proportion` must be in [0, 1], got $active_waiting_proportion",
+            ))
+
+        return new(
+            birth, dialysis, arrival, blood,
             a1, a2, b1, b2, dr1, dr2,
-            cpra, expiration_date)
+            cpra, expiration_date, proportion,
+        )
     end
 end
 
@@ -64,13 +82,15 @@ function Recipient(birth::Union{Date,DateTime},
     b1::HLA, b2::HLA,
     dr1::HLA, dr2::HLA,
     cpra::Integer;
-    expiration_date::Union{Date,DateTime,Nothing}=nothing)
+    expiration_date::Union{Date,DateTime,Nothing}=nothing,
+    active_waiting_proportion::Real=1.)
 
     return Recipient(Date(birth), Date(dialysis), Date(arrival),
         blood,
         a1, a2, b1, b2, dr1, dr2,
         Int64(cpra);
-        expiration_date=expiration_date === nothing ? nothing : Date(expiration_date))
+        expiration_date=expiration_date === nothing ? nothing : Date(expiration_date),
+        active_waiting_proportion=active_waiting_proportion)
 end
 
 function Recipient(birth::Union{Date,DateTime},
@@ -81,7 +101,8 @@ function Recipient(birth::Union{Date,DateTime},
     b1::Integer, b2::Integer,
     dr1::Integer, dr2::Integer,
     cpra::Integer;
-    expiration_date::Union{Date,DateTime,Nothing}=nothing)
+    expiration_date::Union{Date,DateTime,Nothing}=nothing,
+    active_waiting_proportion::Real=1.)
 
     return Recipient(Date(birth), Date(dialysis), Date(arrival),
         blood,
@@ -89,7 +110,8 @@ function Recipient(birth::Union{Date,DateTime},
         HLA(b1), HLA(b2),
         HLA(dr1), HLA(dr2),
         Int64(cpra);
-        expiration_date=expiration_date === nothing ? nothing : Date(expiration_date))
+        expiration_date=expiration_date === nothing ? nothing : Date(expiration_date),
+        active_waiting_proportion=active_waiting_proportion)
 end
 
 
@@ -172,7 +194,8 @@ function shift_recipient_timeline(recipient::Recipient, new_arrival::Date)::Reci
         recipient.b1, recipient.b2,
         recipient.dr1, recipient.dr2,
         recipient.cpra;
-        expiration_date=expiration_date)
+        expiration_date=expiration_date,
+        active_waiting_proportion=recipient.active_waiting_proportion)
 end
 
 """
@@ -191,16 +214,18 @@ end
 function Base.show(io::IO, ::MIME"text/plain", r::Recipient)
     print(io,
         "Recipient\n",
-        "  Birth Date     : $(r.birth)\n",
-        "  Dialysis Start : $(r.dialysis)\n",
-        "  Arrival Date   : $(r.arrival)\n",
-        "  Blood Type     : $(r.blood)\n",
-        "  HLA-A          : $(r.a1), $(r.a2)\n",
-        "  HLA-B          : $(r.b1), $(r.b2)\n",
-        "  HLA-DR         : $(r.dr1), $(r.dr2)\n",
-        "  CPRA           : $(r.cpra)\n",
-        "  Expiration     : ",
-        r.expiration_date === nothing ? "none" : string(r.expiration_date)
+        "  Birth Date        : $(r.birth)\n",
+        "  Dialysis Start    : $(r.dialysis)\n",
+        "  Arrival Date      : $(r.arrival)\n",
+        "  Blood Type        : $(r.blood)\n",
+        "  HLA-A             : $(r.a1), $(r.a2)\n",
+        "  HLA-B             : $(r.b1), $(r.b2)\n",
+        "  HLA-DR            : $(r.dr1), $(r.dr2)\n",
+        "  CPRA              : $(r.cpra)\n",
+        "  Expiration        : ",
+        r.expiration_date === nothing ? "none\n" : string(r.expiration_date)*"\n",
+        "  Active proportion : ",
+        string(round(r.active_waiting_proportion, digits=2))
     )
 end
 
