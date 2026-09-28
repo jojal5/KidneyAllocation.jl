@@ -15,8 +15,9 @@
 
     @testset "check dataframe columns" begin
 
-        import KidneyAllocation: check_df_columns, check_df_column_constant
-        df = CSV.read("data/filtered_outcomes.csv", DataFrame)
+        import KidneyAllocation: check_df_columns, check_df_column_constant, check_df_at_most_one_exit_outcome
+        df = CSV.read("data/unfiltered_outcomes.csv", DataFrame)
+        g = groupby(df, :CAN_ID)
 
         @testset "check_df_columns" begin
             @test check_df_columns(df, :CAN_ID, :UPDATE_TM, :OUTCOME) === nothing
@@ -37,9 +38,17 @@
 
             @test_throws ArgumentError check_df_column_constant(df, :CAN_ID)
 
-            g = groupby(df, :CAN_ID)
             @test check_df_column_constant(g[1], :CAN_ID) === nothing
 
+        end
+
+        @testset "check_df_at_most_one_exit_outcome" begin
+            @test check_df_at_most_one_exit_outcome(g[1]) === nothing
+            @test_throws ArgumentError check_df_at_most_one_exit_outcome(g[2])
+            @test check_df_at_most_one_exit_outcome(g[3]) === nothing
+            @test_throws ArgumentError check_df_at_most_one_exit_outcome(g[4])
+            @test check_df_at_most_one_exit_outcome(g[5]) === nothing
+            @test check_df_at_most_one_exit_outcome(g[6]) === nothing
         end
     end
 

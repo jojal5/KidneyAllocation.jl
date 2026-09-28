@@ -62,6 +62,38 @@ function check_df_column_constant(df::AbstractDataFrame, cols::Symbol...)
 end
 
 """
+    check_df_at_most_one_exit_outcome(df, outcomes=...) -> Nothing
+
+Verify that a single recipient history contains at most one of the specified
+exit outcomes. Outcome codes are matched case-insensitively.
+"""
+function check_df_at_most_one_exit_outcome(
+    df::AbstractDataFrame,
+    outcomes::AbstractVector{<:AbstractString}=[
+        "X", "TX VIVANT", "DCD", "TX",
+    ],
+)
+    check_df_columns(df, :OUTCOME)
+    check_df_column_constant(df, :CAN_ID)
+
+    exit_outcomes = Set(
+        uppercase(strip(string(outcome))) for outcome in outcomes
+    )
+
+    n_exit_outcomes = count(
+        row -> uppercase(strip(string(row.OUTCOME))) ∈ exit_outcomes,
+        eachrow(df),
+    )
+
+    n_exit_outcomes ≤ 1 ||
+        throw(ArgumentError(
+            "More than one exit outcome found for this recipient",
+        ))
+
+    return nothing
+end
+
+"""
     infer_recipient_expiration_date(df::AbstractDataFrame) -> Union{Date,Nothing}
 
 Return the earliest recorded exit date for a single recipient.

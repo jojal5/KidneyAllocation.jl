@@ -31,48 +31,50 @@ using KidneyAllocation
 
 
 
-import KidneyAllocation: check_df_columns, check_df_column_constant
-        df = CSV.read("test/data/filtered_outcomes.csv", DataFrame)
-
-        @testset "check_df_columns" begin
-            @test check_df_columns(df, :CAN_ID, :UPDATE_TM, :OUTCOME) === nothing
-
-            df2 = similar(df, 0)
-            @test check_df_columns(df2, :CAN_ID, :UPDATE_TM, :OUTCOME) === nothing
-
-            @test_throws ArgumentError check_df_columns(df, :INEXISTENT)
-
-            df3 = df[1:2, :]
-            allowmissing!(df3, 5)
-            df3[1, 5] = missing
-
-            @test_throws ArgumentError check_df_columns(df3, :CAN_ID, :UPDATE_TM, :OUTCOME)
-        end
-
-
-
-
-
-
-
-
-
-
-
-
-
-df = CSV.read("test/data/filtered_outcomes.csv", DataFrame)
+df = CSV.read("test/data/unfiltered_outcomes.csv", DataFrame)
 
 g = groupby(df, :CAN_ID)
 
-df_recipient = sort(g[2], :UPDATE_TM)
+df_recipient = sort(g[4], :UPDATE_TM)
+
+
+import KidneyAllocation:check_df_at_most_one_exit_outcome
+
+check_df_at_most_one_exit_outcome(df_recipient)
+
+
+@testset "check_df_at_most_one_exit_outcome" begin
+    df = CSV.read("test/data/unfiltered_outcomes.csv", DataFrame)
+    g = groupby(df, :CAN_ID)
+    @test check_df_at_most_one_exit_outcome(g[1]) === nothing
+    @test_throws ArgumentError check_df_at_most_one_exit_outcome(g[2])
+    @test check_df_at_most_one_exit_outcome(g[3]) === nothing
+    @test_throws ArgumentError check_df_at_most_one_exit_outcome(g[4])
+    @test check_df_at_most_one_exit_outcome(g[5]) === nothing
+    @test check_df_at_most_one_exit_outcome(g[6]) === nothing
+end
+
+
+
+
+function recipient_active_days_percentage(df::AbstractDataFrame)::Float64
+
+    isempty(df) && return 0.
+    
+    check_df_column_constant(df, :CAN_ID, :CAN_LISTING_DT, :CAN_LISTING_DT)
+    check_df_columns(df, :OUTCOME, :UPDATE_TM)
+
+
+end
+
+df_recipient = sort(g[5], :UPDATE_TM)
 
 total_waiting = df_recipient.UPDATE_TM[end]- df_recipient.CAN_LISTING_DT[1]
 
 active_waiting = max(Millisecond(0), df_recipient.UPDATE_TM[1]- df_recipient.CAN_LISTING_DT[1])
 
-for i in nrow(df_recipient)
-    if df_recipient.OUTCOME[i] == 1
+for i in 1:nrow(df_recipient)-1
+    if df_recipient.OUTCOME[i] == "1"
         active_waiting += max(Millisecond(0), df_recipient.UPDATE_TM[i+1]- df_recipient.UPDATE_TM[i])
     end
 end
