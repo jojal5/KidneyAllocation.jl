@@ -27,8 +27,8 @@
             @test_throws ArgumentError check_df_columns(df, :INEXISTENT)
 
             df3 = df[1:2, :]
-            allowmissing!(df3, 2)
-            df3[1, 2] = missing
+            allowmissing!(df3, 5)
+            df3[1, 5] = missing
 
             @test_throws ArgumentError check_df_columns(df3, :CAN_ID, :UPDATE_TM, :OUTCOME)
         end

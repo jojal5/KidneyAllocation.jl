@@ -8,7 +8,7 @@ using KidneyAllocation
 
 # recipient_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Candidates.csv"
 
-# df = CSV.read(recipient_filepath, DataFrame)
+# df = CSV.read(recipient_filepath, DataFrame, missingstring=["NULL",""])
 
 # filter!(row->row.CAN_ID in [1, 3, 4, 5, 21752, 21900], df)
 # select!(df, [:CAN_ID, :CAN_LISTING_DT, :CAN_DIAL_DT,:OUTCOME, :UPDATE_TM])
@@ -17,10 +17,10 @@ using KidneyAllocation
 
 # recipient_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Candidates.csv"
 
-# df = CSV.read(recipient_filepath, DataFrame)
+# df = CSV.read(recipient_filepath, DataFrame, missingstring=["NULL",""])
 
 # filter!(row->row.CAN_ID in [1, 3, 4, 5, 21752, 21900], df)
-# select!(df, [:CAN_ID, :CAN_LISTING_DT, :OUTCOME, :UPDATE_TM])
+# select!(df, [:CAN_ID, :CAN_LISTING_DT, :CAN_DIAL_DT,:OUTCOME, :UPDATE_TM])
 
 # filtered_df = combine(groupby(df, :CAN_ID)) do recipient_df
 #     KidneyAllocation.filter_outcomes(recipient_df)
@@ -29,16 +29,25 @@ using KidneyAllocation
 # CSV.write("filtered_outcomes.csv", filtered_df)
 
 
-df = CSV.read("test/data/unfiltered_outcomes.csv", DataFrame)
 
-import KidneyAllocation: check_df_columns, check_df_column_constant, filter_outcomes
 
-g = groupby(df, :CAN_ID)
+import KidneyAllocation: check_df_columns, check_df_column_constant
+        df = CSV.read("test/data/filtered_outcomes.csv", DataFrame)
 
-df = DataFrame(g[2])
+        @testset "check_df_columns" begin
+            @test check_df_columns(df, :CAN_ID, :UPDATE_TM, :OUTCOME) === nothing
 
-filter_outcomes(df)
+            df2 = similar(df, 0)
+            @test check_df_columns(df2, :CAN_ID, :UPDATE_TM, :OUTCOME) === nothing
 
+            @test_throws ArgumentError check_df_columns(df, :INEXISTENT)
+
+            df3 = df[1:2, :]
+            allowmissing!(df3, 5)
+            df3[1, 5] = missing
+
+            @test_throws ArgumentError check_df_columns(df3, :CAN_ID, :UPDATE_TM, :OUTCOME)
+        end
 
 
 
