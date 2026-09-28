@@ -1,5 +1,8 @@
 @testset "allocation.jl" begin
 
+    rng = Random.default_rng(1234)
+    mode = :threshold
+
     @testset "get_eligible_recipient_indice" begin
 
         import KidneyAllocation.get_eligible_recipient_indices
@@ -55,6 +58,8 @@
 
         @testset "Eligible recipient with the higher score accept the offer" begin
 
+            
+
             # Registry (tiny and fakes)
             recipients = [
                 Recipient(Date(1981, 1, 1), Date(1997, 1, 1), Date(2000, 6, 1), O, 69, 2403, 7, 35, 4, 103, 0),
@@ -66,11 +71,11 @@
             is_unallocated = trues(length(recipients))
 
             # Les deux candidats sont éligibles, les deux accepteraient l'offre et le deuxième a le score le plus élevé. C'est donc au 2e que l'offre sera attribuée.
-            @test allocate_one_donor(donor, recipients, dm, is_unallocated) == 2
+            @test allocate_one_donor(donor, recipients, dm, is_unallocated, mode=mode, rng=rng) == 2
 
             # Lorsque le 2e candidat a reçu une offre, il ne fait plus partie de la compétition et le premier devrait recevoir l'offre similaire.
             is_unallocated[2] = false
-            @test allocate_one_donor(donor, recipients, dm, is_unallocated) == 1
+            @test allocate_one_donor(donor, recipients, dm, is_unallocated; mode=mode, rng=rng) == 1
 
         end
 
@@ -84,7 +89,7 @@
             donor = Donor(Date(2001, 1, 1), 65, O, 69, 2403, 7, 35, 4, 103, 1.5)
 
             # Les deux candidats sont éligibles, le 2e accepterait l'offre, mais le 1er a le score le plus élevé. C'est donc au 2e que l'offre sera attribuée.
-            @test allocate_one_donor(donor, recipients, dm) == 2
+            @test allocate_one_donor(donor, recipients, dm; mode=mode, rng=rng) == 2
         end
 
         @testset "Eligible recipients refuse the offer" begin
@@ -97,7 +102,7 @@
             donor = Donor(Date(2001, 1, 1), 45, O, 2, 33, 37, 53, 4, 11, 1.6)
 
             # Les deux candidats sont éligibles, les deux refuseraient l'offre. L'offre n'est donc pas attribuée
-            @test allocate_one_donor(donor, recipients, dm) == 0
+            @test allocate_one_donor(donor, recipients, dm; mode=mode, rng=rng) == 0
         end
     end
 
@@ -118,7 +123,7 @@
             ]
 
             # Both donors attributed to the recipient with the highest score
-            @test allocate(donors, recipients, dm) == [2, 1]
+            @test allocate(donors, recipients, dm; mode=mode, rng=rng) == [2, 1]
 
         end
 
@@ -136,7 +141,7 @@
             ]
 
             # First donor not accepted, both following donors attributed to the recipient with the highest score
-            @test allocate(donors, recipients, dm) == [0, 2, 1]
+            @test allocate(donors, recipients, dm; mode=mode, rng=rng) == [0, 2, 1]
 
         end
 
@@ -159,7 +164,7 @@
             ]
 
             # First donor not accepted, early stop when recipient 2 accept the offer
-            @test allocate_until_transplant(donors, recipients, dm, 2) == 2
+            @test allocate_until_transplant(donors, recipients, dm, 2; mode=mode, rng=rng) == 2
 
     end
 
@@ -183,16 +188,16 @@
         ]
 
         # Recipient 1 refuses the firts offer
-        @test allocate_until_next_offer(donors, recipients, dm, 1) == 1
+        @test allocate_until_next_offer(donors, recipients, dm, 1; mode=mode, rng=rng) == 1
 
         # Recipient 2 refuses the first offer
-        @test allocate_until_next_offer(donors, recipients, dm, 2) == 1
+        @test allocate_until_next_offer(donors, recipients, dm, 2; mode=mode, rng=rng) == 1
 
         # Recipient 3 has not been offered a donor
-        @test allocate_until_next_offer(donors, recipients, dm, 3) == 0
+        @test allocate_until_next_offer(donors, recipients, dm, 3; mode=mode, rng=rng) == 0
 
         # Recipient 4 has been offered donor 4
-        @test allocate_until_next_offer(donors, recipients, dm, 4) == 4
+        @test allocate_until_next_offer(donors, recipients, dm, 4; mode=mode, rng=rng) == 4
 
     end
 

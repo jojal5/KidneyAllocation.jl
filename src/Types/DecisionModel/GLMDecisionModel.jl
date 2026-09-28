@@ -46,13 +46,3 @@ function acceptance_probability(dm::GLMDecisionModel, recipient::Recipient, dono
     p = acceptance_probability(dm, [recipient], donor::Donor)
     return p[1]
 end
-
-
-function decide(dm::GLMDecisionModel, recipients::Vector{Recipient}, donor::Donor)
-    
-    # Acceptance probability
-    p = acceptance_probability(dm, recipients, donor)
-
-    # Decision
-    return p .> dm.threshold
-end

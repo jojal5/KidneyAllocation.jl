@@ -109,17 +109,40 @@ function acceptance_probability(dm::M, recipient::Recipient, donor::Donor) where
     return acceptance_probability(dm, [recipient], donor)[1]
 end
 
-function decide(dm::M, recipients::Vector{Recipient}, donor::Donor) where M<:AbstractDecisionModel
-    
+"""
+    decide(dm, recipients, donor; mode=:random, rng=Random.default_rng()) -> Vector{Bool}
+
+Return acceptance decisions for `recipients`. With `mode=:random`, decisions
+are sampled from the predicted acceptance probabilities. With
+`mode=:threshold`, recipients are accepted when their probability is at least
+`dm.threshold`.
+"""
+function decide(
+    dm::AbstractDecisionModel,
+    recipients::Vector{Recipient},
+    donor::Donor;
+    mode::Symbol=:random,
+    rng::AbstractRNG=Random.default_rng(),
+)
+    mode ∈ (:random, :threshold) ||
+        throw(ArgumentError(
+            "mode must be either :random or :threshold; got $mode",
+        ))
+
     p = acceptance_probability(dm, recipients, donor)
 
-    # acceptation = p .> dm.threshold
-    acceptation = p .> rand(length(p))
-
-    return acceptation
-
+    if mode === :random
+        return rand(rng, length(p)) .< p
+    else
+        return p .>= dm.threshold
+    end
 end
 
-function decide(dm::M, recipient::Recipient, donor::Donor) where M<:AbstractDecisionModel
-    return decide(dm, [recipient], donor)[1]
+function decide(
+    dm::AbstractDecisionModel,
+    recipient::Recipient,
+    donor::Donor;
+    kwargs...,
+)
+    return only(decide(dm, [recipient], donor; kwargs...))
 end

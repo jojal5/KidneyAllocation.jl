@@ -1,120 +1,126 @@
 
-"""
-    allocate_one_donor(donor, recipients, dm, is_unallocated) -> Int
+function allocate_one_donor(
+    donor::Donor,
+    recipients::Vector{Recipient},
+    dm::AbstractDecisionModel,
+    is_unallocated::AbstractVector{<:Bool}=trues(length(recipients));
+    mode::Symbol=:random,
+    rng::AbstractRNG=Random.default_rng(),
+)
+    ranked_indices = rank_eligible_recipient_indices(donor, recipients, is_unallocated)
 
-Return the index of the first recipient who accepts the donor offer among
-eligible and ranked candidates, or `0` if none accept.
+    return allocate_one_donor(donor, recipients, dm, ranked_indices; mode=mode, rng=rng)
+end
+
+
+"""
+    allocate_one_donor(donor, recipients, dm, ranked_indices;
+                       mode=:random, rng=Random.default_rng()) -> Int
+
+Return the index of the first recipient in `ranked_indices` who accepts
+`donor`, or `0` if none accepts. `mode` and `rng` are forwarded to `decide`.
 """
 function allocate_one_donor(
     donor::Donor,
     recipients::Vector{Recipient},
     dm::AbstractDecisionModel,
-    is_unallocated::BitVector=trues(length(recipients))
+    ranked_indices::AbstractVector{<:Int};
+    mode::Symbol=:random,
+    rng::AbstractRNG=Random.default_rng(),
 )
-    eligible_indices = get_eligible_recipient_indices(donor, recipients, is_unallocated)
+    isempty(ranked_indices) && return 0
 
-    if isempty(eligible_indices) # No eligible recipient
-        return 0
-    else
-        ranked_indices = rank_eligible_indices_by_score(donor, recipients, eligible_indices)
-        return allocate_one_donor(donor, recipients, dm, ranked_indices)
-    end
+    accepted = decide(dm, recipients[ranked_indices], donor; mode=mode, rng=rng)
 
+    first_accepted = findfirst(accepted)
+    return isnothing(first_accepted) ? 0 : ranked_indices[first_accepted]
 end
 
-"""
-    allocate_one_donor(donor, recipients, dm, ranked_indices) -> Int
-
-Return the index of the first accepting recipient in `ranked_indices`,
-or `0` if none accept.
-"""
-function allocate_one_donor(
-    donor::Donor,
-    recipients::Vector{Recipient},
-    dm::AbstractDecisionModel,
-    ranked_indices::AbstractVector{<:Int}
-)
-    accepted = decide(dm, recipients[ranked_indices], donor)
-
-    if any(accepted)
-        ind = findfirst(accepted)
-        return ranked_indices[ind]
-    else
-        return 0
-    end
-
-end
 
 """
-    allocate_one_donor(donor, recipients, dm, ranked_indices::Int) -> Int
+    allocate_one_donor(donor, recipients, dm, ranked_index;
+                       mode=:random, rng=Random.default_rng()) -> Int
 
-Return `ranked_indices` if the corresponding recipient accepts the offer,
+Return `ranked_index` if the corresponding recipient accepts the donor offer,
 or `0` otherwise.
 """
 function allocate_one_donor(
     donor::Donor,
     recipients::Vector{Recipient},
     dm::AbstractDecisionModel,
-    ranked_indices::Int
+    ranked_index::Int;
+    mode::Symbol=:random,
+    rng::AbstractRNG=Random.default_rng()
 )
     
-    return allocate_one_donor(donor, recipients, dm, [ranked_indices])
+    return allocate_one_donor(donor, recipients, dm, [ranked_index]; mode=mode, rng=rng)
 end
 
 """
-    allocate(donors, recipients, dm) -> Vector{Int}
+    allocate(donors, recipients, dm;
+             mode=:random, rng=Random.default_rng()) -> Vector{Int}
 
-Allocate each donor in `donors` to at most one recipient in `recipients` using `dm`.
+Allocate each donor to at most one recipient using `dm`.
 
-Returns a vector of allocated recipient indices (0 if unallocated).
+`mode` and `rng` are forwarded to `allocate_one_donor`. Return the allocated
+recipient index for each donor, using `0` when no allocation is made.
 """
-function allocate(donors::Vector{Donor}, recipients::Vector{Recipient}, dm::AbstractDecisionModel)
-
-    is_unallocated = trues(length(recipients))                 
-    allocated_recipient_index = zeros(Int64,length(donors))
+function allocate(
+    donors::Vector{Donor},
+    recipients::Vector{Recipient},
+    dm::AbstractDecisionModel;
+    mode::Symbol=:random,
+    rng::AbstractRNG=Random.default_rng(),
+)
+    is_unallocated = trues(length(recipients))
+    allocated_recipient_indices = zeros(Int, length(donors))
 
     for donor_idx in eachindex(donors)
-
         donor = donors[donor_idx]
 
-        allocated_recipient_index[donor_idx] = allocate_one_donor(donor, recipients, dm, is_unallocated)
+        recipient_idx = allocate_one_donor(donor, recipients, dm, is_unallocated; mode=mode, rng=rng)
 
-        if allocated_recipient_index[donor_idx] != 0
-            is_unallocated[allocated_recipient_index[donor_idx]] = false
+        allocated_recipient_indices[donor_idx] = recipient_idx
+
+        if recipient_idx != 0
+            is_unallocated[recipient_idx] = false
         end
     end
 
-    return allocated_recipient_index
+    return allocated_recipient_indices
 end
 
 """
-    allocate_until_transplant(donors, recipients, dm, ind) -> Int
+    allocate_until_transplant(donors, recipients, dm, recipient_index;
+                              mode=:random, rng=Random.default_rng()) -> Int
 
-Allocate donors sequentially using `dm` until recipient `ind` is allocated.
-Return the donor index, or `0` if no transplant occurs.
+Allocate donors sequentially until `recipient_index` is allocated.
+
+Return the corresponding donor index, or `0` if that recipient is never
+allocated. `mode` and `rng` are forwarded to `allocate_one_donor`.
 """
 function allocate_until_transplant(
     donors::Vector{Donor},
     recipients::Vector{Recipient},
     dm::AbstractDecisionModel,
-    ind::Int,
+    recipient_index::Int;
+    mode::Symbol=:random,
+    rng::AbstractRNG=Random.default_rng(),
 )
+    1 ≤ recipient_index ≤ length(recipients) ||
+        throw(ArgumentError(
+            "Recipient index must be in 1:$(length(recipients)); got $recipient_index",
+        ))
 
-    @assert 1 ≤ ind ≤ length(recipients) "Recipient index should be in 1 ≤ ind ≤ $(length(recipients)), got ind = $ind."
-    
     is_unallocated = trues(length(recipients))
 
     for donor_idx in eachindex(donors)
-        donor = donors[donor_idx]
+        recipient_idx = allocate_one_donor(donors[donor_idx], recipients, dm, is_unallocated; mode=mode, rng=rng)
 
-        allocated_recipient_index = allocate_one_donor(donor, recipients, dm, is_unallocated)
+        recipient_idx == recipient_index && return donor_idx
 
-        if allocated_recipient_index == ind
-            return donor_idx
-        end
-
-        if allocated_recipient_index != 0
-            is_unallocated[allocated_recipient_index] = false
+        if recipient_idx != 0
+            is_unallocated[recipient_idx] = false
         end
     end
 
@@ -122,48 +128,49 @@ function allocate_until_transplant(
 end
 
 """
-    allocate_until_next_offer(donors, recipients, dm, ind) -> Int
+    allocate_until_next_offer(donors, recipients, dm, recipient_index;
+                              mode=:random, rng=Random.default_rng()) -> Int
 
-Return the index of the first donor for which recipient `ind` would receive an offer, or `0` if none occurs.
+Return the index of the first donor for which `recipient_index` would receive
+an offer, or `0` if that recipient is never offered a donor.
 """
 function allocate_until_next_offer(
     donors::Vector{Donor},
     recipients::Vector{Recipient},
     dm::AbstractDecisionModel,
-    ind::Int,
+    recipient_index::Int;
+    mode::Symbol=:random,
+    rng::AbstractRNG=Random.default_rng(),
 )
-
-    @assert 1 ≤ ind ≤ length(recipients) "Recipient index should be in 1 ≤ ind ≤ $(length(recipients)), got ind = $ind."
+    1 ≤ recipient_index ≤ length(recipients) ||
+        throw(ArgumentError(
+            "Recipient index must be in 1:$(length(recipients)); got $recipient_index",
+        ))
 
     is_unallocated = trues(length(recipients))
 
     for donor_idx in eachindex(donors)
         donor = donors[donor_idx]
 
-        #TODO: I do not like this repetition of code from allocate_one_donor. Maybe find a more elegant formulation
-        eligible_indices = get_eligible_recipient_indices(donor, recipients, is_unallocated)
-        ranked_indices = rank_eligible_indices_by_score(donor, recipients, eligible_indices)
+        ranked_indices = rank_eligible_recipient_indices(donor, recipients, is_unallocated)
 
-        if isempty(ranked_indices)
-            allocated_recipient_index = 0
-        else
-            allocated_recipient_index = allocate_one_donor(donor, recipients, dm, ranked_indices)
+        isempty(ranked_indices) && continue
+
+
+        allocated_recipient_index = allocate_one_donor(donor, recipients, dm, ranked_indices; mode=mode, rng=rng)
+
+        target_position = findfirst(==(recipient_index), ranked_indices)
+        acceptance_position = findfirst(
+            ==(allocated_recipient_index),
+            ranked_indices,
+        )
+
+        if !isnothing(target_position) &&
+           (isnothing(acceptance_position) ||
+            target_position ≤ acceptance_position)
+            return donor_idx
         end
 
-        # check whether ind would be offered before acceptance (or no acceptance)
-        pos_ind = findfirst(==(ind), ranked_indices)
-        if pos_ind !== nothing
-            if allocated_recipient_index == 0
-                return donor_idx
-            else
-                pos_alloc = findfirst(==(allocated_recipient_index), ranked_indices)
-                if pos_alloc !== nothing && pos_ind ≤ pos_alloc
-                    return donor_idx
-                end
-            end
-        end
-
-        # update availability after allocation
         if allocated_recipient_index != 0
             is_unallocated[allocated_recipient_index] = false
         end
@@ -232,5 +239,23 @@ function rank_eligible_indices_by_score(
     scores = score.(Ref(donor), recipients[eligible_indices])
     p = sortperm(scores; rev=true)
     return eligible_indices[p]
+end
+
+"""
+    rank_eligible_recipient_indices(donor, recipients, is_unallocated) -> Vector{Int}
+
+Return the indices of recipients eligible for `donor`, ordered by allocation
+score.
+"""
+function rank_eligible_recipient_indices(
+    donor::Donor,
+    recipients::Vector{Recipient},
+    is_unallocated::AbstractVector{<:Bool}=trues(length(recipients)),
+)
+    eligible_indices = get_eligible_recipient_indices(donor, recipients, is_unallocated)
+
+    isempty(eligible_indices) && return Int[]
+
+    return rank_eligible_indices_by_score(donor, recipients, eligible_indices)
 end
 
