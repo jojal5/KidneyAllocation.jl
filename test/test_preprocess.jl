@@ -100,6 +100,21 @@ end
 
     end
 
+    @testset "recipient_active_waiting_proportion" begin
+
+        import KidneyAllocation.recipient_active_waiting_proportion
+
+        df = CSV.read("data/filtered_outcomes.csv", DataFrame)
+        g = groupby(df, :CAN_ID)
+
+        @test recipient_active_waiting_proportion(g[1]) ≈ .8855 atol=1e-4
+        @test recipient_active_waiting_proportion(g[2]) ≈ 1. atol=1e-4
+        @test recipient_active_waiting_proportion(g[3]) ≈ .7929 atol=1e-4
+        @test recipient_active_waiting_proportion(g[4]) ≈ 1. atol=1e-4
+        @test recipient_active_waiting_proportion(g[5]) ≈ 1. atol=1e-4
+        @test recipient_active_waiting_proportion(g[6]) ≈ 1. atol=1e-4
+    end
+
     @testset "build_last_cpra_registry" begin
         import KidneyAllocation.build_last_cpra_registry
 

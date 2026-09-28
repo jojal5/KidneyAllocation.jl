@@ -204,6 +204,45 @@ function filter_outcomes(df::AbstractDataFrame)::DataFrame
     return filtered_df
 end
 
+"""
+    recipient_active_waiting_proportion(df::AbstractDataFrame) -> Float64
+
+Return the proportion in `[0, 1]` of the observed waiting period during which
+a single recipient is active. The observed period runs from `CAN_LISTING_DT` to the
+most recent `UPDATE_TM`.
+"""
+function recipient_active_waiting_proportion(df::AbstractDataFrame)::Float64
+    isempty(df) && return 0.0
+
+    check_df_columns(df, :OUTCOME, :UPDATE_TM)
+    check_df_column_constant(df, :CAN_ID, :CAN_LISTING_DT, :CAN_DIAL_DT)
+    check_df_at_most_one_exit_outcome(df)
+
+    recipient_df = sort(df, :UPDATE_TM)
+
+    listing_time = DateTime(first(recipient_df.CAN_LISTING_DT))
+    last_update = DateTime(last(recipient_df.UPDATE_TM))
+    total_waiting = last_update - listing_time
+
+    total_waiting ≤ Millisecond(0) && return 0.0
+
+    active_waiting = Millisecond(0)
+    previous_time = listing_time
+    is_active = true
+
+    for row in eachrow(recipient_df)
+        update_time = DateTime(row.UPDATE_TM)
+
+        if update_time > previous_time
+            is_active && (active_waiting += update_time - previous_time)
+            previous_time = update_time
+        end
+
+        is_active = strip(string(row.OUTCOME)) == "1"
+    end
+
+    return Dates.value(active_waiting) / Dates.value(total_waiting)
+end
 
 """
     fill_hla_pair!(df, col1, col2)
