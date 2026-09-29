@@ -167,35 +167,85 @@ date is replaced by `CAN_DIAL_DT`, which is used as a proxy for the lost
 original listing date.
 
 Exit outcomes are `"X"`, `"TX VIVANT"`, `"DCD"`, and `"TX"`, matched
-case-insensitively. The exit record itself is retained.
+case-insensitively. The exit record itself is retained. 
+
+If multiple exit outcomes share the earliest `UPDATE_TM`, only one is retained.
+Ties are resolved using the exit-outcome order stated below. 
+
+### Note 
+Multiple exit outcomes are registered for patients 501, 827 and 2051.
 """
 function filter_outcomes(df::AbstractDataFrame)::DataFrame
-    
     isempty(df) && return DataFrame(df)
-    
-    check_df_column_constant(df, :CAN_ID, :CAN_LISTING_DT, :CAN_LISTING_DT)
+
+    check_df_column_constant(df, :CAN_ID, :CAN_LISTING_DT, :CAN_DIAL_DT)
     check_df_columns(df, :OUTCOME, :UPDATE_TM)
-    
+
+    # This order also defines the priority for same-date exit outcomes.
     exit_outcomes = ("X", "TX VIVANT", "DCD", "TX")
+    exit_priority = Dict(
+        outcome => rank for (rank, outcome) in enumerate(exit_outcomes)
+    )
+
+    normalize_outcome(outcome) = uppercase(strip(string(outcome)))
+
     earliest_exit_date = nothing
 
     for row in eachrow(df)
-        outcome = uppercase(strip(string(row.OUTCOME)))
+        outcome = normalize_outcome(row.OUTCOME)
 
         if outcome ∈ exit_outcomes
-            date = row.UPDATE_TM
             earliest_exit_date = isnothing(earliest_exit_date) ?
-                date :
-                min(earliest_exit_date, date)
+                row.UPDATE_TM :
+                min(earliest_exit_date, row.UPDATE_TM)
         end
     end
 
     isnothing(earliest_exit_date) && return DataFrame(df)
 
-    filtered_df = filter(:UPDATE_TM => (date -> date ≤ earliest_exit_date), df)
+    filtered_df = filter(
+        :UPDATE_TM => date -> date ≤ earliest_exit_date,
+        df,
+    )
+
+    exit_indices = Int[]
+
+    for (i, row) in enumerate(eachrow(filtered_df))
+        outcome = normalize_outcome(row.OUTCOME)
+
+        if row.UPDATE_TM == earliest_exit_date && outcome ∈ exit_outcomes
+            push!(exit_indices, i)
+        end
+    end
+
+    if length(exit_indices) > 1
+        retained_idx = first(exit_indices)
+
+        for i in exit_indices[2:end]
+            outcome = normalize_outcome(filtered_df[i, :OUTCOME])
+            retained_outcome = normalize_outcome(
+                filtered_df[retained_idx, :OUTCOME],
+            )
+
+            if exit_priority[outcome] < exit_priority[retained_outcome]
+                retained_idx = i
+            end
+        end
+
+        keep = trues(nrow(filtered_df))
+
+        for i in exit_indices
+            i != retained_idx && (keep[i] = false)
+        end
+
+        filtered_df = filtered_df[keep, :]
+    end
 
     listing_date = first(filtered_df.CAN_LISTING_DT)
-    dialysis_date = convert(typeof(listing_date), first(filtered_df.CAN_DIAL_DT))
+    dialysis_date = convert(
+        typeof(listing_date),
+        first(filtered_df.CAN_DIAL_DT),
+    )
 
     if maximum(filtered_df.UPDATE_TM) < listing_date
         filtered_df.CAN_LISTING_DT .= dialysis_date
@@ -412,6 +462,11 @@ Cleaning steps:
 function load_recipient(filepath::AbstractString)
     df = CSV.read(filepath, DataFrame, missingstring=["-", "", "NULL"])
 
+    # Manually removing duplicated rows for TX (TODO check in new dataset version if these errors are still present)
+    if (df.OUTCOME[3104] == df.OUTCOME[3105]) & (df.UPDATE_TM[3104] == df.UPDATE_TM[3105])
+        deleteat!(df, 3104)
+    end
+
     # Replacing the value 24L and 24Low with 24 for instance
     df.CAN_A2 = parse_hla_int.(df.CAN_A2)
 
@@ -547,10 +602,13 @@ function build_recipient_registry(recipient_filepath::String, cpra_filepath::Str
     recipient_by_can_id = Dict{Int,Recipient}()
 
     for g in groupby(df, :CAN_ID)
-        exp_date = infer_recipient_expiration_date(g)
-        active_waiting_proportion = recipient_active_waiting_proportion(g)
 
-        r = first(g)
+        filtered_df = filter_outcomes(g)
+
+        exp_date = infer_recipient_expiration_date(filtered_df)
+        active_waiting_proportion = recipient_active_waiting_proportion(filtered_df)
+
+        r = first(filtered_df)
         can_id = r.CAN_ID
 
         cpra = get(cpra_by_can_id, can_id, 0)

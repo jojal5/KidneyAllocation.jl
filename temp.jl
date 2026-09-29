@@ -5,8 +5,29 @@ using CSV, DataFrames, Dates, JLD2, Random, Test
 
 using KidneyAllocation
 
+import KidneyAllocation: build_last_cpra_registry, filter_outcomes, infer_recipient_expiration_date, recipient_active_waiting_proportion
 
+df = load_recipient(recipient_filepath)
 
+    required = Symbol[
+        :CAN_ID, :UPDATE_TM, :OUTCOME,
+        :CAN_BTH_DT, :CAN_DIAL_DT, :CAN_LISTING_DT,
+        :CAN_BLOOD, :CAN_A1, :CAN_A2, :CAN_B1, :CAN_B2, :CAN_DR1, :CAN_DR2
+    ]
+    dropmissing!(df, required)
+
+    cpra_by_can_id = build_last_cpra_registry(cpra_filepath)
+    recipient_by_can_id = Dict{Int,Recipient}()
+
+    for g in groupby(df, :CAN_ID)
+        println(first(g.CAN_ID))
+
+        filtered_df = filter_outcomes(g)
+
+        exp_date = infer_recipient_expiration_date(filtered_df)
+        active_waiting_proportion = recipient_active_waiting_proportion(filtered_df)
+
+    end
 
 
 
