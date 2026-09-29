@@ -424,13 +424,19 @@ function load_recipient(filepath::AbstractString)
     end
 
     # Keeping only the recipients for kidney transplant
-    filter!(row -> row.OUTCOME ∈ ("TX", "1", "0", "X", "Dcd", "Tx Vivant"), df)
+    filter!(row -> uppercase(row.OUTCOME) ∈ ("TX", "1", "0", "X", "DCD", "TX VIVANT"), df)
+
+    # # Keeping only the first outcome for each recipient. Some recipients are registered more than once and key information are lost for the additional registration
+    # filter_outcomes
 
     # Removing the recipient where the dialysis time is missing. It happens for recipients that received a kidney from a living donor.
     dropmissing!(df, [:CAN_DIAL_DT])
 
-    # If listing time is missing, replacing it by the dialysis time. If listing is before dialysis, set listing = dialysis
-    enforce_listing_after_dialysis!(df)
+    # # If listing time is missing, replacing it by the dialysis time. If listing is before dialysis, set listing = dialysis
+    # enforce_listing_after_dialysis!(df)
+
+    # If listing time is missing, replacing it by the dialysis time.
+    coalesce_listing!(df)
 
     # Transform DateTime in Date
     df.CAN_LISTING_DT = Date.(df.CAN_LISTING_DT)
@@ -542,48 +548,45 @@ function build_recipient_registry(recipient_filepath::String, cpra_filepath::Str
 
     for g in groupby(df, :CAN_ID)
         exp_date = infer_recipient_expiration_date(g)
+        active_waiting_proportion = recipient_active_waiting_proportion(g)
 
         r = first(g)
         can_id = r.CAN_ID
 
         cpra = get(cpra_by_can_id, can_id, 0)
-        recipient_by_can_id[can_id] = recipient_from_row(r, cpra, exp_date)
+        recipient_by_can_id[can_id] = recipient_from_row(r, cpra; expiration_date = exp_date, active_waiting_proportion = active_waiting_proportion)
     end
 
     return recipient_by_can_id
 end
 
 """
-    enforce_listing_after_dialysis!(df) -> AbstractDataFrame
+    coalesce_listing!(df::AbstractDataFrame) -> AbstractDataFrame
 
-Modify `df` in place to ensure `CAN_LISTING_DT ≥ CAN_DIAL_DT`. If
-`CAN_LISTING_DT` is missing or earlier than `CAN_DIAL_DT`, it is replaced by
-`CAN_DIAL_DT`.
+Replace each missing value in `:CAN_LISTING_DT` with the corresponding value
+in `:CAN_DIAL_DT`, modifying `df` in place.
 
-# Notes
-The DataFrame is expected to have the structure returned by
-[`load_recipient`](@ref).
+`df` must contain `:CAN_LISTING_DT` and `:CAN_DIAL_DT`. Values in
+`:CAN_DIAL_DT` must be non-missing.
 """
-function enforce_listing_after_dialysis!(df::AbstractDataFrame)
-    @assert "CAN_LISTING_DT" in names(df) "Missing column :CAN_LISTING_DT"
-    @assert "CAN_DIAL_DT" in names(df) "Missing column :CAN_DIAL_DT"
+function coalesce_listing!(df::AbstractDataFrame)
+    for col in (:CAN_LISTING_DT, :CAN_DIAL_DT)
+        col ∈ propertynames(df) ||
+            throw(ArgumentError("Missing column :$col"))
+    end
 
-    for r in eachrow(df)
-        dial = r.CAN_DIAL_DT
-        list = r.CAN_LISTING_DT
+    any(ismissing, df[!, :CAN_DIAL_DT]) &&
+        throw(ArgumentError("Column :CAN_DIAL_DT contains missing values"))
 
-        # If dialysis date is missing, we cannot enforce the constraint
-        if ismissing(dial)
-            continue
-        end
-
-        if ismissing(list) || list < dial
-            r.CAN_LISTING_DT = dial
+    for row in eachrow(df)
+        if ismissing(row.CAN_LISTING_DT)
+            row.CAN_LISTING_DT = row.CAN_DIAL_DT
         end
     end
 
     return df
 end
+
 
 """
     harmonize_col!(df; col, idcol=:CAN_ID) -> DataFrame

@@ -223,16 +223,21 @@ end
     end
 
 
-    @testset "enforce_listing_after_dialysis!()" begin
-        import KidneyAllocation.enforce_listing_after_dialysis!
+    @testset "coalesce_listing!" begin
+        import KidneyAllocation.coalesce_listing!
 
-        df = DataFrame(CAN_ID=[1, 2, 3, 4], CAN_DIAL_DT=[Date(2000, 1, 1), Date(2001, 1, 1), Date(2002, 1, 1), missing], CAN_LISTING_DT=[Date(2001, 1, 1), Date(1990, 1, 1), missing, Date(2003, 1, 1)])
-        enforce_listing_after_dialysis!(df)
+        df = DataFrame(CAN_ID=[1, 2, 3], CAN_DIAL_DT=[Date(2000, 1, 1), Date(2001, 1, 1), Date(2002, 1, 1)], CAN_LISTING_DT=[Date(2001, 1, 1), Date(1990, 1, 1), missing])
+        coalesce_listing!(df)
 
         @test df.CAN_LISTING_DT[1] == Date(2001, 1, 1)
-        @test df.CAN_LISTING_DT[2] == Date(2001, 1, 1)
+        @test df.CAN_LISTING_DT[2] == Date(1990, 1, 1)
         @test df.CAN_LISTING_DT[3] == Date(2002, 1, 1)
-        @test df.CAN_LISTING_DT[4] == Date(2003, 1, 1)
+
+        allowmissing!(df, 2)
+        df.CAN_DIAL_DT[1] = missing
+
+        @test_throws ArgumentError coalesce_listing!(df)
+
     end
 
     @testset "harmonize_col!()" begin
