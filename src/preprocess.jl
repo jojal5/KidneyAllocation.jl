@@ -444,26 +444,37 @@ function load_recipient(filepath::AbstractString)
 end
 
 """
-    recipient_from_row(r, cpra=0, expiration_date=nothing) -> Recipient
+    recipient_from_row(
+        r::DataFrameRow,
+        cpra::Integer=0;
+        expiration_date=nothing,
+        active_waiting_proportion=1.0,
+    ) -> Recipient
 
-Construct a `Recipient` from a recipient `DataFrameRow`. Assume non-missing value.
+Construct a `Recipient` from one row of a recipient's history. Required values
+in `r` are assumed non-missing.
 """
-function recipient_from_row(r::DataFrameRow, cpra::Int=0, expiration_date::Union{Nothing,Date}=nothing)
-
+function recipient_from_row(
+    r::DataFrameRow,
+    cpra::Integer=0;
+    expiration_date::Union{Date,DateTime,Nothing}=nothing,
+    active_waiting_proportion::Real=1.0,
+)
     birth = r.CAN_BTH_DT
     dialysis = r.CAN_DIAL_DT
     arrival = r.CAN_LISTING_DT
 
     blood = parse_abo(String(r.CAN_BLOOD))
 
-    a1, a2 = r.CAN_A1, r.CAN_A2
-    b1, b2 = r.CAN_B1, r.CAN_B2
-    dr1, dr2 = r.CAN_DR1, r.CAN_DR2
-
-    recipient = Recipient(birth, dialysis, arrival, blood, a1, a2, b1, b2, dr1, dr2, cpra; expiration_date=expiration_date)
-
-    return recipient
-
+    return Recipient(
+        birth, dialysis, arrival, blood,
+        r.CAN_A1, r.CAN_A2,
+        r.CAN_B1, r.CAN_B2,
+        r.CAN_DR1, r.CAN_DR2,
+        cpra;
+        expiration_date=expiration_date,
+        active_waiting_proportion=active_waiting_proportion,
+    )
 end
 
 """

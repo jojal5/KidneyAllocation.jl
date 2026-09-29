@@ -8,50 +8,6 @@ using KidneyAllocation
 
 
 
-# --- Valid construction with explicit expiration_date ---
-    exp_date = DateTime(2026, 1, 1)
-    r2 = Recipient(birth, dialysis, arrival,
-        blood,
-        a1, a2, b1, b2,
-        dr1, dr2,
-        cpra; expiration_date=exp_date)
-
-    @test r2.expiration_date == exp_date
-
-    # --- CPRA boundary values: 0 and 100 should be accepted ---
-    r0 = Recipient(birth, dialysis, arrival,
-        blood,
-        a1, a2, b1, b2,
-        dr1, dr2,
-        0)
-    @test r0.cpra == 0
-
-    r100 = Recipient(birth, dialysis, arrival,
-        blood,
-        a1, a2, b1, b2,
-        dr1, dr2,
-        100)
-    @test r100.cpra == 100
-
-    # --- Invalid CPRA values ---
-    @test_throws ArgumentError Recipient(birth, dialysis, arrival,
-        blood,
-        a1, a2, b1, b2,
-        dr1, dr2,
-        -1)
-    @test_throws ArgumentError Recipient(birth, dialysis, arrival,
-        blood,
-        a1, a2, b1, b2,
-        dr1, dr2,
-        120)
-
-
-Recipient(birth, dialysis, arrival,
-        blood,
-        a1, a2, b1, b2,
-        dr1, dr2,
-        -1)
-
 
 
 
