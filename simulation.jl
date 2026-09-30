@@ -138,7 +138,7 @@ arrival = donor.arrival
 eligible_mask = is_active.(waiting_recipients, arrival) .&& is_abo_compatible.(donor, waiting_recipients)
 eligible_index = findall(eligible_mask)
 
-ranked_indices = KidneyAllocation.rank_eligible_indices_by_score(donor,waiting_recipients, eligible_index )
+ranked_indices = KidneyAllocation.rank_eligible_indices_by_score(donor, waiting_recipients, eligible_index )
 
 @time p= KidneyAllocation.acceptance_probability(dm, waiting_recipients[ranked_indices], donor)
 

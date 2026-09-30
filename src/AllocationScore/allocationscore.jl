@@ -105,6 +105,8 @@ function score_wait_time(d::Donor, r::Recipient)
     # Cap at highest category
     if wait_time >= 10
         return scores[end]
+    elseif wait_time < 0
+        return 0
     else
         return scores[wait_time + 1]
     end
