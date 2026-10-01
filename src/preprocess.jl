@@ -471,9 +471,9 @@ function load_recipient(filepath::AbstractString)
     coalesce_listing!(df)
 
     # Transform DateTime in Date
-    df.CAN_LISTING_DT = Date.(df.CAN_LISTING_DT)
-    df.CAN_DIAL_DT = Date.(df.CAN_DIAL_DT)
-    df.UPDATE_TM = passmissing(Date).(df.UPDATE_TM)
+    # df.CAN_LISTING_DT = Date.(df.CAN_LISTING_DT)
+    # df.CAN_DIAL_DT = Date.(df.CAN_DIAL_DT)
+    # df.UPDATE_TM = passmissing(Date).(df.UPDATE_TM)
 
     # Keeping only adult recipients
     filter!(row -> years_between(row.CAN_BTH_DT, row.CAN_LISTING_DT) > 17, df)

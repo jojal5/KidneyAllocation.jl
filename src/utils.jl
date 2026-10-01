@@ -20,6 +20,10 @@ function days_between(d1::Date, d2::Date)::Int
     return Dates.value(d2 - d1)
 end
 
+function days_between(d1::Union{Date,DateTime},d2::Union{Date,DateTime})::Int
+    return days_between(Date(d1), Date(d2))
+end
+
 """
     fractionalyears_between(d1, d2)
 
@@ -38,12 +42,16 @@ function fractionalyears_between(d1::Date, d2::Date)
     return ndays/365.25
 end
 
+function fractionalyears_between(d1::Union{Date,DateTime},d2::Union{Date,DateTime})::Int
+    return fractionalyears_between(Date(d1), Date(d2))
+end
+
 """
     years_between(d1::Date, d2::Date)
 
 Compute the number of full calendar years between two dates.
 
-## Details 
+### Details 
 - Returns a positive integer when `d2` is later than `d1`
 - Returns a negative integer when `d2` is earlier than `d1`
 
@@ -74,6 +82,10 @@ function years_between(d1::Date, d2::Date)::Int
     end
 
     return forward ? y : -y
+end
+
+function years_between(d1::Union{Date,DateTime},d2::Union{Date,DateTime})::Int
+    return years_between(Date(d1), Date(d2))
 end
 
 """
