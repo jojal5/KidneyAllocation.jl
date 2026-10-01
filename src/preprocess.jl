@@ -154,26 +154,50 @@ function recipient_arrival_departure(df::AbstractDataFrame, future_date::Date=Da
 end
 
 """
+    first_exit_date(df::AbstractDataFrame) -> Union{DateTime,Nothing}
+
+Return the earliest update time associated with an exit outcome for a single
+recipient, or `nothing` if no exit outcome is recorded.
+"""
+function first_exit_date(df::AbstractDataFrame)::Union{DateTime,Nothing}
+    isempty(df) && return nothing
+
+    check_df_column_constant(df, :CAN_ID)
+    check_df_columns(df, :OUTCOME, :UPDATE_TM)
+
+    exit_outcomes = ("X", "TX VIVANT", "DCD", "TX")
+    earliest_exit_time = nothing
+
+    for row in eachrow(df)
+        outcome = uppercase(strip(string(row.OUTCOME)))
+
+        if outcome ∈ exit_outcomes
+            update_time = DateTime(row.UPDATE_TM)
+
+            earliest_exit_time = isnothing(earliest_exit_time) ?
+                update_time :
+                min(earliest_exit_time, update_time)
+        end
+    end
+
+    return earliest_exit_time
+end
+
+"""
     filter_outcomes(df::AbstractDataFrame) -> DataFrame
 
-Return the records from the first waiting-list episode of a single recipient.
+Return records from the first waiting-list episode of a single recipient.
 
-Recipients may be re-listed after a previous exit while retaining their
-original dialysis date. Because the source file retains only the most recent
-listing date, records after the earliest exit outcome are removed.
+Rows after the first exit outcome are removed, while the exit record is
+retained. Exact duplicate retained rows are removed.
+(Happen for recipients 501, 827 and 2051)
 
-If all retained updates precede the recorded `CAN_LISTING_DT`, the listing
-date is replaced by `CAN_DIAL_DT`, which is used as a proxy for the lost
+If every retained `UPDATE_TM` precedes the recorded `CAN_LISTING_DT`,
+`CAN_LISTING_DT` is replaced by `CAN_DIAL_DT` as a proxy for the unavailable
 original listing date.
 
-Exit outcomes are `"X"`, `"TX VIVANT"`, `"DCD"`, and `"TX"`, matched
-case-insensitively. The exit record itself is retained. 
-
-If multiple exit outcomes share the earliest `UPDATE_TM`, only one is retained.
-Ties are resolved using the exit-outcome order stated below. 
-
-### Note 
-Multiple exit outcomes are registered for patients 501, 827 and 2051.
+`:UPDATE_TM` must contain `DateTime` values so that outcomes occurring on the
+same calendar date can be ordered correctly.
 """
 function filter_outcomes(df::AbstractDataFrame)::DataFrame
     isempty(df) && return DataFrame(df)
@@ -181,75 +205,28 @@ function filter_outcomes(df::AbstractDataFrame)::DataFrame
     check_df_column_constant(df, :CAN_ID, :CAN_LISTING_DT, :CAN_DIAL_DT)
     check_df_columns(df, :OUTCOME, :UPDATE_TM)
 
-    # This order also defines the priority for same-date exit outcomes.
-    exit_outcomes = ("X", "TX VIVANT", "DCD", "TX")
-    exit_priority = Dict(
-        outcome => rank for (rank, outcome) in enumerate(exit_outcomes)
-    )
+    update_type = eltype(skipmissing(df[!, :UPDATE_TM]))
 
-    normalize_outcome(outcome) = uppercase(strip(string(outcome)))
+    update_type <: DateTime || throw(ArgumentError("Column :UPDATE_TM must contain DateTime values; got $update_type"))
 
-    earliest_exit_date = nothing
+    exit_time = first_exit_date(df)
 
-    for row in eachrow(df)
-        outcome = normalize_outcome(row.OUTCOME)
+    if exit_time === nothing
+        filtered_df = DataFrame(df)
+    else
+        filtered_df = filter(:UPDATE_TM => date -> date ≤ exit_time, df)
 
-        if outcome ∈ exit_outcomes
-            earliest_exit_date = isnothing(earliest_exit_date) ?
-                row.UPDATE_TM :
-                min(earliest_exit_date, row.UPDATE_TM)
-        end
-    end
+        listing_date = first(filtered_df.CAN_LISTING_DT)
+        dialysis_date = convert(typeof(listing_date), first(filtered_df.CAN_DIAL_DT))
 
-    isnothing(earliest_exit_date) && return DataFrame(df)
-
-    filtered_df = filter(
-        :UPDATE_TM => date -> date ≤ earliest_exit_date,
-        df,
-    )
-
-    exit_indices = Int[]
-
-    for (i, row) in enumerate(eachrow(filtered_df))
-        outcome = normalize_outcome(row.OUTCOME)
-
-        if row.UPDATE_TM == earliest_exit_date && outcome ∈ exit_outcomes
-            push!(exit_indices, i)
-        end
-    end
-
-    if length(exit_indices) > 1
-        retained_idx = first(exit_indices)
-
-        for i in exit_indices[2:end]
-            outcome = normalize_outcome(filtered_df[i, :OUTCOME])
-            retained_outcome = normalize_outcome(
-                filtered_df[retained_idx, :OUTCOME],
-            )
-
-            if exit_priority[outcome] < exit_priority[retained_outcome]
-                retained_idx = i
-            end
+        if maximum(filtered_df.UPDATE_TM) < listing_date
+            filtered_df.CAN_LISTING_DT .= dialysis_date
         end
 
-        keep = trues(nrow(filtered_df))
-
-        for i in exit_indices
-            i != retained_idx && (keep[i] = false)
-        end
-
-        filtered_df = filtered_df[keep, :]
     end
 
-    listing_date = first(filtered_df.CAN_LISTING_DT)
-    dialysis_date = convert(
-        typeof(listing_date),
-        first(filtered_df.CAN_DIAL_DT),
-    )
-
-    if maximum(filtered_df.UPDATE_TM) < listing_date
-        filtered_df.CAN_LISTING_DT .= dialysis_date
-    end
+    # Removing duplicated rows (happens for recipient 501, 827 and 2051)
+    unique!(filtered_df)
 
     return filtered_df
 end
