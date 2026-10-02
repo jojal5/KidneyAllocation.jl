@@ -10,47 +10,45 @@ function construct_feature_matrix(dm::TreeDecisionModel, recipients::Vector{Reci
     arrival = donor.arrival
     n = length(recipients)
 
-    DON_AGE  = Vector{Float64}(undef, n)
+    # Preallocate columns (types matter)
+    DON_AGE  = Vector{Int64}(undef, n)
     KDRI     = Vector{Float64}(undef, n)
-    CAN_AGE  = Vector{Float64}(undef, n)
+    CAN_AGE  = Vector{Int64}(undef, n)
     CAN_WAIT = Vector{Float64}(undef, n)
-    MISMATCH = Vector{Float64}(undef, n)
-    is_bloodtype_O  = zeros(Float64, n)
-    is_bloodtype_A  = zeros(Float64, n)
-    is_bloodtype_B  = zeros(Float64, n)
-    is_bloodtype_AB = zeros(Float64, n)
+    CAN_BLOOD = Vector{ABOGroup}(undef, n)
+    CPRA = Vector{Int64}(undef, n)
 
-    kdri = float(donor.kdri)
-    don_age = float(donor.age)
+    MISMATCH = Vector{Int64}(undef, n)
+    DON_CAN_SCORE = Vector{Float64}(undef, n)
 
-    fill!(DON_AGE, don_age)
-    fill!(KDRI, kdri)
+    for (i, r) in enumerate(recipients)
 
-    @inbounds for i in 1:n
-        r = recipients[i]
+        DON_AGE[i]  = donor.age
+        KDRI[i]     = donor.kdri
 
-        CAN_AGE[i]  = float(years_between(get_birth(r), arrival))
-        CAN_WAIT[i] = float(fractionalyears_between(get_dialysis(r), arrival))
-        MISMATCH[i] = float(mismatch_count(donor, r))
+        CAN_AGE[i]  = years_between(r.birth, arrival)
+        CAN_WAIT[i] = fractionalyears_between(r.dialysis, arrival)
+        CAN_BLOOD[i] = r.blood
+        CPRA[i] = r.cpra
 
-        # One-hot blood type (exactly one is 1.0)
-        if r.blood == O
-            is_bloodtype_O[i] = 1.0
-        elseif r.blood == A
-            is_bloodtype_A[i] = 1.0
-        elseif r.blood == B
-            is_bloodtype_B[i] = 1.0
-        else
-            is_bloodtype_AB[i] = 1.0
-        end
+        MISMATCH[i] = mismatch_count(donor, r)
+        DON_CAN_SCORE[i] = score(donor, r)
+        
     end
+
+    is_bloodtype_O = CAN_BLOOD .== O
+    is_bloodtype_A = CAN_BLOOD .== A
+    is_bloodtype_B = CAN_BLOOD .== B
+    is_bloodtype_AB = CAN_BLOOD .== AB
 
     cols = Dict{Symbol,AbstractVector}(
         :DON_AGE => DON_AGE,
         :KDRI => KDRI,
         :CAN_AGE => CAN_AGE,
         :CAN_WAIT => CAN_WAIT,
+        :CPRA => CPRA,
         :MISMATCH => MISMATCH,
+        :DON_CAN_SCORE => DON_CAN_SCORE,
         :is_bloodtype_O => is_bloodtype_O,
         :is_bloodtype_A => is_bloodtype_A,
         :is_bloodtype_B => is_bloodtype_B,

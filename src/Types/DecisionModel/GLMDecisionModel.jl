@@ -9,37 +9,42 @@ function acceptance_probability(dm::GLMDecisionModel, recipients::Vector{Recipie
     n = length(recipients)
 
     # Preallocate columns (types matter)
-    KDRI     = Vector{Float64}(undef, n)
     DON_AGE  = Vector{Int64}(undef, n)
+    KDRI     = Vector{Float64}(undef, n)
     CAN_AGE  = Vector{Int64}(undef, n)
     CAN_WAIT = Vector{Float64}(undef, n)
-    CAN_BLOOD = Vector{String}(undef, n)
-    MISMATCH = Vector{Int64}(undef, n) 
+    CAN_BLOOD = Vector{ABOGroup}(undef, n)
+    CPRA = Vector{Int64}(undef, n)
 
-    kdri = donor.kdri
-    don_age = donor.age
+    MISMATCH = Vector{Int64}(undef, n)
+    DON_CAN_SCORE = Vector{Float64}(undef, n)
 
-    @inbounds for i in 1:n
-        r = recipients[i]
+    for (i, r) in enumerate(recipients)
 
-        KDRI[i]     = kdri
-        DON_AGE[i]  = don_age
-        CAN_AGE[i]  = years_between(get_birth(r), arrival)
-        CAN_WAIT[i] = fractionalyears_between(get_dialysis(r), arrival)
-        CAN_BLOOD[i] = string(r.blood)
+        DON_AGE[i]  = donor.age
+        KDRI[i]     = donor.kdri
+
+        CAN_AGE[i]  = years_between(r.birth, arrival)
+        CAN_WAIT[i] = fractionalyears_between(r.dialysis, arrival)
+        CAN_BLOOD[i] = r.blood
+        CPRA[i] = r.cpra
+
         MISMATCH[i] = mismatch_count(donor, r)
+        DON_CAN_SCORE[i] = score(donor, r)
+        
     end
 
-    df = DataFrame(
+    df = DataFrame(DON_AGE = DON_AGE,
         KDRI = KDRI,
         CAN_AGE = CAN_AGE,
         CAN_WAIT = CAN_WAIT,
         CAN_BLOOD = CAN_BLOOD,
-        DON_AGE = DON_AGE,
+        CPRA = CPRA,
         MISMATCH = MISMATCH,
+        DON_CAN_SCORE = DON_CAN_SCORE,
     )
 
-    return predict(dm.fm, df)
+    return GLM.predict(dm.fm, df)
 end
 
 function acceptance_probability(dm::GLMDecisionModel, recipient::Recipient, donor::Donor)
