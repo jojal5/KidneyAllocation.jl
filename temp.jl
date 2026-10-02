@@ -1,34 +1,97 @@
 using Pkg
 Pkg.activate(".")
 
-using CSV, DataFrames, Dates, JLD2, Random, Test
+using CSV, DataFrames, Dates, Random, Test
 
 using KidneyAllocation
 
-import KidneyAllocation: build_last_cpra_registry, filter_outcomes, infer_recipient_expiration_date, recipient_active_waiting_proportion
+import KidneyAllocation: has_expiration, is_expired, is_active, is_registered
 
-df = load_recipient(recipient_filepath)
+    birth = Date(1980, 1, 1)
+    arrival = Date(2024, 1, 1)
+    dialysis = Date(2015, 1, 1)
 
-    required = Symbol[
-        :CAN_ID, :UPDATE_TM, :OUTCOME,
-        :CAN_BTH_DT, :CAN_DIAL_DT, :CAN_LISTING_DT,
-        :CAN_BLOOD, :CAN_A1, :CAN_A2, :CAN_B1, :CAN_B2, :CAN_DR1, :CAN_DR2
-    ]
-    dropmissing!(df, required)
+    # Valid HLA alleles from your allowed sets
+    dr1 = HLA(1)
+    dr2 = HLA(4)
+    a1 = HLA(24)
+    a2 = HLA(26)
+    b1 = HLA(44)
+    b2 = HLA(51)
 
-    cpra_by_can_id = build_last_cpra_registry(cpra_filepath)
-    recipient_by_can_id = Dict{Int,Recipient}()
+    cpra = 30
+    blood = A   # ABOGroup.A
 
-    for g in groupby(df, :CAN_ID)
-        println(first(g.CAN_ID))
+    # --- Recipient without expiration date and always on active waiting (expiration_date = nothing) ---
+    r_noexp = Recipient(birth, dialysis, arrival, blood,
+        a1, a2, b1, b2, dr1, dr2,
+        cpra)
 
-        filtered_df = filter_outcomes(g)
+    @test has_expiration(r_noexp) == false
 
-        exp_date = infer_recipient_expiration_date(filtered_df)
-        active_waiting_proportion = recipient_active_waiting_proportion(filtered_df)
+    t_before = Date(2023, 12, 31)
+    t_at_arrival = arrival
+    t_after = Date(2025, 1, 1)
 
-    end
+    # No expiration: never expired
+    @test is_expired(r_noexp, t_before) == false
+    @test is_expired(r_noexp, t_at_arrival) == false
+    @test is_expired(r_noexp, t_after) == false
 
+    # Registration for no-expiration recipient
+    @test is_registered(r_noexp, t_before) == false     # before arrival
+    @test is_registered(r_noexp, t_at_arrival) == true     # exactly at arrival
+    @test is_registered(r_noexp, t_after) == true      # after arrival, no expiration
+
+    # always active
+    @test is_active(r_noexp, t_before) == false     # before arrival
+    @test is_active(r_noexp, t_at_arrival) == true     # exactly at arrival
+    @test is_active(r_noexp, t_after) == true      # after arrival, no expiration
+
+
+    # --- Recipient with explicit expiration date, always active ---
+    exp_date = Date(2025, 1, 1)
+    r_exp = Recipient(birth, dialysis, arrival, blood,
+        a1, a2, b1, b2, dr1, dr2,
+        cpra; expiration_date=exp_date)
+
+    @test has_expiration(r_exp) == true
+
+    t_before_exp = Date(2024, 6, 1)
+    t_at_exp = exp_date
+    t_after_exp = Date(2025, 6, 1)
+
+    # Expired logic: uses strict < t
+    @test is_expired(r_exp, t_before_exp) == false
+    @test is_expired(r_exp, t_at_exp) == false   # equal → NOT expired
+    @test is_expired(r_exp, t_after_exp) == true    # after expiration → expired
+
+    # Activity with expiration:
+    # - before arrival → inactive
+    # - between arrival and exp_date inclusive → active
+    # - after expiration → inactive
+    @test is_registered(r_exp, t_before) == false
+    @test is_registered(r_exp, arrival) == true
+    @test is_registered(r_exp, t_before_exp) == true
+    @test is_registered(r_exp, t_at_exp) == true
+    @test is_registered(r_exp, t_after_exp) == false
+
+    @test is_active(r_exp, t_before) == false
+    @test is_active(r_exp, arrival) == true
+    @test is_active(r_exp, t_before_exp) == true
+    @test is_active(r_exp, t_at_exp) == true
+    @test is_active(r_exp, t_after_exp) == false
+
+    # --- Recipient with explicit expiration date, active waiting proportion of 1/2 ---
+    exp_date = Date(2025, 1, 1)
+    r_exp = Recipient(birth, dialysis, arrival, blood,
+        a1, a2, b1, b2, dr1, dr2,
+        cpra; expiration_date=exp_date, active_waiting_proportion = .5)
+
+    rng = Random.MersenneTwister(12345)
+    @test is_active(r_exp, arrival, rng=rng) == false
+    rng = Random.MersenneTwister(123)
+    @test is_active(r_exp, arrival, rng=rng) == true
 
 
 

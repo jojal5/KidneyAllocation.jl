@@ -142,16 +142,32 @@ and `false` if `expiration_date` is `nothing`.
 has_expiration(r::Recipient) = r.expiration_date !== nothing
 
 """
-    is_active(r::Recipient, t::Date) -> Bool
+    is_registered(r::Recipient, t::Date) -> Bool
 
-Returns `true` if the recipient is active on the waitlist at time `t`.
+Return whether recipient `r` is registered on the waiting list at date `t`.
 
-A recipient is considered active if:
-- the current time `t` is on or after their arrival date, and
-- they have no expiration date, or the expiration date is on or after `t`.
+A recipient is registered from `r.arrival` through `r.expiration_date`
+(inclusively), or indefinitely when `r.expiration_date` is `nothing`.
 """
-is_active(r::Recipient, t::Date) =
+is_registered(r::Recipient, t::Date) =
     t >= r.arrival && !is_expired(r, t)
+
+"""
+    is_active(r::Recipient, t::Date; rng=Random.default_rng()) -> Bool
+
+Return whether recipient `r` is active at date `t`.
+
+An unregistered recipient is never active. For a registered recipient, activity
+is sampled independently with probability `r.active_waiting_proportion`.
+"""
+function is_active(
+    r::Recipient,
+    t::Date;
+    rng::AbstractRNG=Random.default_rng(),
+)::Bool
+    return is_registered(r, t) &&
+           rand(rng) < r.active_waiting_proportion
+end
 
 """
     is_expired(r::Recipient, t::Date) -> Bool

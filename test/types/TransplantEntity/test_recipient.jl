@@ -79,13 +79,13 @@
         a1, a2, b1, b2,
         dr1, dr2,
         0,
-        active_waiting_proportion = -1.)
+        active_waiting_proportion=-1.)
     @test_throws ArgumentError Recipient(birth, dialysis, arrival,
         blood,
         a1, a2, b1, b2,
         dr1, dr2,
         0,
-        active_waiting_proportion = 5.)
+        active_waiting_proportion=5.)
 
     # --- Invalid DR alleles ---
     @test_throws ArgumentError Recipient(birth, dialysis, arrival,
@@ -126,7 +126,7 @@ end
 
 @testset "Recipient expiration and activity helpers" begin
 
-    import KidneyAllocation: has_expiration, is_expired, is_active
+    import KidneyAllocation: has_expiration, is_expired, is_active, is_registered
 
     birth = Date(1980, 1, 1)
     arrival = Date(2024, 1, 1)
@@ -143,7 +143,7 @@ end
     cpra = 30
     blood = A   # ABOGroup.A
 
-    # --- Recipient without expiration date (expiration_date = nothing) ---
+    # --- Recipient without expiration date and always on active waiting (expiration_date = nothing) ---
     r_noexp = Recipient(birth, dialysis, arrival, blood,
         a1, a2, b1, b2, dr1, dr2,
         cpra)
@@ -159,12 +159,18 @@ end
     @test is_expired(r_noexp, t_at_arrival) == false
     @test is_expired(r_noexp, t_after) == false
 
-    # Activity for no-expiration recipient
+    # Registration for no-expiration recipient
+    @test is_registered(r_noexp, t_before) == false     # before arrival
+    @test is_registered(r_noexp, t_at_arrival) == true     # exactly at arrival
+    @test is_registered(r_noexp, t_after) == true      # after arrival, no expiration
+
+    # always active
     @test is_active(r_noexp, t_before) == false     # before arrival
     @test is_active(r_noexp, t_at_arrival) == true     # exactly at arrival
     @test is_active(r_noexp, t_after) == true      # after arrival, no expiration
 
-    # --- Recipient with explicit expiration date ---
+
+    # --- Recipient with explicit expiration date, always active ---
     exp_date = Date(2025, 1, 1)
     r_exp = Recipient(birth, dialysis, arrival, blood,
         a1, a2, b1, b2, dr1, dr2,
@@ -185,11 +191,28 @@ end
     # - before arrival → inactive
     # - between arrival and exp_date inclusive → active
     # - after expiration → inactive
+    @test is_registered(r_exp, t_before) == false
+    @test is_registered(r_exp, arrival) == true
+    @test is_registered(r_exp, t_before_exp) == true
+    @test is_registered(r_exp, t_at_exp) == true
+    @test is_registered(r_exp, t_after_exp) == false
+
     @test is_active(r_exp, t_before) == false
     @test is_active(r_exp, arrival) == true
     @test is_active(r_exp, t_before_exp) == true
     @test is_active(r_exp, t_at_exp) == true
     @test is_active(r_exp, t_after_exp) == false
+
+    # --- Recipient with explicit expiration date, active waiting proportion of 1/2 ---
+    exp_date = Date(2025, 1, 1)
+    r_exp = Recipient(birth, dialysis, arrival, blood,
+        a1, a2, b1, b2, dr1, dr2,
+        cpra; expiration_date=exp_date, active_waiting_proportion=0.5)
+
+    rng = Random.MersenneTwister(12345)
+    @test is_active(r_exp, arrival, rng=rng) == false
+    rng = Random.MersenneTwister(123)
+    @test is_active(r_exp, arrival, rng=rng) == true
 end
 
 
