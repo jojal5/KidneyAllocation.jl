@@ -7,39 +7,6 @@ using KidneyAllocation
 
 
 
-
-"""
-    get_expiration_date(df::AbstractDataFrame) -> Union{DateTime,Nothing}
-
-Return the time of the latest retained update if its outcome indicates a
-permanent exit from the waiting list; otherwise return `nothing`.
-"""
-function get_expiration_date(df::AbstractDataFrame)::Union{DateTime,Nothing}
-    expiration_outcomes = ("X", "TX VIVANT", "DCD")
-
-    date, outcome = get_last_update(df)
-
-    return uppercase(strip(outcome)) ∈ expiration_outcomes ? date : nothing
-end
-
-@testset "get_expiration_date()" begin
-        import KidneyAllocation.get_expiration_date
-
-        df = CSV.read("data/unfiltered_outcomes.csv", DataFrame)
-        G = groupby(df, :CAN_ID)
-
-        date = get_expiration_date(G[1])
-        @test date === nothing
-
-        date = get_expiration_date(G[4])
-        @test date == DateTime(2004, 4, 20, 0, 30, 14)
-
-        date = get_expiration_date(G[5])
-        @test date === nothing
-    end
-
-import KidneyAllocation.get_last_update
-
 # recipient_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Candidates.csv"
 
 # df = CSV.read(recipient_filepath, DataFrame, missingstring=["NULL",""])

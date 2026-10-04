@@ -131,21 +131,21 @@
         @test date === nothing
     end
 
-    # @testset "infer_recipient_expiration_date" begin
-    #     import KidneyAllocation.infer_recipient_expiration_date
+    @testset "get_exit_date()" begin
+        import KidneyAllocation.get_exit_date
 
-    #     df = CSV.read("data/filtered_outcomes.csv", DataFrame)
+        df = CSV.read("data/unfiltered_outcomes.csv", DataFrame)
+        G = groupby(df, :CAN_ID)
 
-    #     g = groupby(df, :CAN_ID)
+        date = get_exit_date(G[1])
+        @test date === DateTime(2012,4,24,14,33,41)
 
-    #     @test infer_recipient_expiration_date(g[1]) === nothing
-    #     @test infer_recipient_expiration_date(g[2]) === nothing
-    #     @test infer_recipient_expiration_date(g[3]) === nothing
-    #     @test infer_recipient_expiration_date(g[4]) == DateTime(2004, 04, 20, 0, 30, 14)
-    #     @test infer_recipient_expiration_date(g[5]) === nothing
-    #     @test infer_recipient_expiration_date(g[6]) === nothing
+        date = get_exit_date(G[4])
+        @test date == DateTime(2004, 4, 20, 0, 30, 14)
 
-    # end
+        date = get_exit_date(G[5])
+        @test date === nothing
+    end
 
     @testset "recipient_active_waiting_proportion" begin
 
@@ -232,42 +232,42 @@
         @test df.DON_DR2 == [7, 7, 7, 6]
     end
 
-    @testset "recipient_arrival_departure" begin
+    # @testset "recipient_arrival_departure" begin
 
-        import KidneyAllocation.recipient_arrival_departure
+    #     import KidneyAllocation.recipient_arrival_departure
 
-        @testset "recipient permanently removed" begin
-            df = DataFrame(CAN_ID=2311, CAN_LISTING_DT=Date(2009, 9, 17),
-                OUTCOME=["X", "0", "1", "1"], UPDATE_TM=[Date(2013, 1, 10), Date(2012, 8, 3), Date(2012, 2, 29), Date(2011, 2, 1)])
+    #     @testset "recipient permanently removed" begin
+    #         df = DataFrame(CAN_ID=2311, CAN_LISTING_DT=Date(2009, 9, 17),
+    #             OUTCOME=["X", "0", "1", "1"], UPDATE_TM=[Date(2013, 1, 10), Date(2012, 8, 3), Date(2012, 2, 29), Date(2011, 2, 1)])
 
-            arrival, departure = recipient_arrival_departure(df)
+    #         arrival, departure = recipient_arrival_departure(df)
 
-            @test arrival == Date(2009, 9, 17)
-            @test departure == Date(2013, 1, 10)
-        end
+    #         @test arrival == Date(2009, 9, 17)
+    #         @test departure == Date(2013, 1, 10)
+    #     end
 
 
-        @testset "transplanted recipient" begin
-            df = DataFrame(CAN_ID=5695, CAN_LISTING_DT=Date(2017, 6, 19),
-                OUTCOME=["TX", "1"], UPDATE_TM=[Date(2017, 9, 14), Date(2017, 7, 14)])
+    #     @testset "transplanted recipient" begin
+    #         df = DataFrame(CAN_ID=5695, CAN_LISTING_DT=Date(2017, 6, 19),
+    #             OUTCOME=["TX", "1"], UPDATE_TM=[Date(2017, 9, 14), Date(2017, 7, 14)])
 
-            arrival, departure = recipient_arrival_departure(df)
+    #         arrival, departure = recipient_arrival_departure(df)
 
-            @test arrival == Date(2017, 6, 19)
-            @test departure == Date(2017, 9, 14)
-        end
+    #         @test arrival == Date(2017, 6, 19)
+    #         @test departure == Date(2017, 9, 14)
+    #     end
 
-        @testset "still wainting recipient" begin
-            df = DataFrame(CAN_ID=18725, CAN_LISTING_DT=Date(2021, 6, 14),
-                OUTCOME=["1"], UPDATE_TM=[Date(2021, 9, 22)])
+    #     @testset "still wainting recipient" begin
+    #         df = DataFrame(CAN_ID=18725, CAN_LISTING_DT=Date(2021, 6, 14),
+    #             OUTCOME=["1"], UPDATE_TM=[Date(2021, 9, 22)])
 
-            arrival, departure = recipient_arrival_departure(df)
+    #         arrival, departure = recipient_arrival_departure(df)
 
-            @test arrival == Date(2021, 6, 14)
-            @test departure == Date(2100, 1, 1)
-        end
+    #         @test arrival == Date(2021, 6, 14)
+    #         @test departure == Date(2100, 1, 1)
+    #     end
 
-    end
+    # end
 
 
     @testset "coalesce_listing!" begin

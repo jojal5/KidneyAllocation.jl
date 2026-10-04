@@ -126,67 +126,48 @@ function get_expiration_date(df::AbstractDataFrame)::Union{DateTime,Nothing}
     return uppercase(strip(outcome)) ∈ expiration_outcomes ? date : nothing
 end
 
+"""
+    get_exit_date(df::AbstractDataFrame) -> Union{DateTime,Nothing}
+
+Return the time of the first recorded exit from the waiting list for a single
+recipient, or `nothing` if no exit outcome is recorded.
+"""
+function get_exit_date(df::AbstractDataFrame)::Union{DateTime,Nothing}
+    exit_outcomes = ("TX", "TX VIVANT", "X", "DCD")
+
+    date, outcome = get_last_update(df)
+
+    return uppercase(strip(outcome)) ∈ exit_outcomes ? date : nothing
+end
+
+
 # """
-#     infer_recipient_expiration_date(df::AbstractDataFrame) -> Union{Date,Nothing}
+#     recipient_arrival_departure(df; future_date=Date(2100,1,1)) -> (arrival, departure)
 
-# Return the earliest recorded exit date for a single recipient.
-
-# `df` must contain the columns `:CAN_ID`, `:OUTCOME`, and `:UPDATE_TM`;
-# all rows must belong to the same recipient. `:UPDATE_TM` must contain
-# `Date` or `DateTime` values without missing entries.
-
-# Outcome codes are matched case-insensitively. A permanent exit status is `"X"`,
-# `"TX VIVANT"`, or `"DCD"`.
-
-# Return `nothing` if no permanent exit status is recorded.
+# Infer the arrival and departure dates of a single recipient from its status history.
+# If the recipient is still active at the most recent update, `future_date` is used
+# as the departure date.
 # """
-# function infer_recipient_expiration_date(df::AbstractDataFrame)::Union{DateTime,Nothing}
+# function recipient_arrival_departure(df::AbstractDataFrame, future_date::Date=Date(2100, 1, 1))
 
-#     check_df_columns(df, :CAN_ID, :OUTCOME, :UPDATE_TM)
+#     check_df_columns(df, :CAN_ID, :OUTCOME, :UPDATE_TM, :CAN_LISTING_DT)
 #     check_df_column_constant(df, :CAN_ID)
-    
-#     isempty(df) && return nothing
 
-#     filtered_df = filter_outcomes(df)
+#     # Sort the dataframe rows so that the most recent is on top
+#     idx = sortperm(df.UPDATE_TM; rev=true)
+#     outcomes = df.OUTCOME[idx]
+#     updates = df.UPDATE_TM[idx]
 
-#     exit_outcomes = ("X", "TX VIVANT", "DCD")
-#     exit_dates = DateTime[]
+#     arrival = df.CAN_LISTING_DT[1]
 
-#     for row in eachrow(df)
-#         outcome = uppercase(strip(string(row.OUTCOME)))
-#         outcome ∈ exit_outcomes && push!(exit_dates, row.UPDATE_TM)
+#     if outcomes[1] == "1"
+#         departure = future_date # Arbitrary date after the end of the historic period
+#     else
+#         departure = updates[1] # Si transplanté ou retiré
 #     end
 
-#     return isempty(exit_dates) ? nothing : minimum(exit_dates)
+#     return arrival, departure
 # end
-
-"""
-    recipient_arrival_departure(df; future_date=Date(2100,1,1)) -> (arrival, departure)
-
-Infer the arrival and departure dates of a single recipient from its status history.
-If the recipient is still active at the most recent update, `future_date` is used
-as the departure date.
-"""
-function recipient_arrival_departure(df::AbstractDataFrame, future_date::Date=Date(2100, 1, 1))
-
-    check_df_columns(df, :CAN_ID, :OUTCOME, :UPDATE_TM, :CAN_LISTING_DT)
-    check_df_column_constant(df, :CAN_ID)
-
-    # Sort the dataframe rows so that the most recent is on top
-    idx = sortperm(df.UPDATE_TM; rev=true)
-    outcomes = df.OUTCOME[idx]
-    updates = df.UPDATE_TM[idx]
-
-    arrival = df.CAN_LISTING_DT[1]
-
-    if outcomes[1] == "1"
-        departure = future_date # Arbitrary date after the end of the historic period
-    else
-        departure = updates[1] # Si transplanté ou retiré
-    end
-
-    return arrival, departure
-end
 
 """
     first_exit_date(df::AbstractDataFrame) -> Union{DateTime,Nothing}

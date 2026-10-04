@@ -44,7 +44,7 @@ for g in G
     end
 end
 
-donor_arrival_rate = n/6
+donor_arrival_rate = n/8
 
 ## Build donor registry by DON_ID
 
