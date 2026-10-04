@@ -54,35 +54,66 @@
 
     @testset "filter_outcomes" begin
 
-    import KidneyAllocation.filter_outcomes
+        import KidneyAllocation.filter_outcomes
 
-    df = CSV.read("data/unfiltered_outcomes.csv", DataFrame)
+        df = CSV.read("data/unfiltered_outcomes.csv", DataFrame)
 
-    g = groupby(df, :CAN_ID)
+        g = groupby(df, :CAN_ID)
 
-    is_exit_outcome(outcome::AbstractString) =
-        uppercase(strip(outcome)) ∈ ("X", "TX VIVANT", "DCD", "TX")
+        is_exit_outcome(outcome::AbstractString) =
+            uppercase(strip(outcome)) ∈ ("X", "TX VIVANT", "DCD", "TX")
 
-    n_exit_outcome = [1, 1, 1, 1, 0, 0]
-    first_exit_date = [DateTime(2012,4,24, 14, 33, 41),
-        DateTime(2004,1,14,22,55,12),
-        DateTime(2012,7,1,17,0,10),
-        DateTime(2004,4,20,0,30,14),
-        nothing,
-        nothing]
+        n_exit_outcome = [1, 1, 1, 1, 0, 0]
+        first_exit_date = [DateTime(2012, 4, 24, 14, 33, 41),
+            DateTime(2004, 1, 14, 22, 55, 12),
+            DateTime(2012, 7, 1, 17, 0, 10),
+            DateTime(2004, 4, 20, 0, 30, 14),
+            nothing,
+            nothing]
 
-    for i in 1:length(g)
-        filtered_df = filter_outcomes(g[i])
-        exit_rows = is_exit_outcome.(filtered_df.OUTCOME)
-        @test count(exit_rows) == n_exit_outcome[i]
-        if !isnothing(first_exit_date[i])
-            @test filtered_df[exit_rows, :UPDATE_TM][1] == first_exit_date[i]
-        else
-            @test all(.!(exit_rows))
+        for i in 1:length(g)
+            filtered_df = filter_outcomes(g[i])
+            exit_rows = is_exit_outcome.(filtered_df.OUTCOME)
+            @test count(exit_rows) == n_exit_outcome[i]
+            if !isnothing(first_exit_date[i])
+                @test filtered_df[exit_rows, :UPDATE_TM][1] == first_exit_date[i]
+            else
+                @test all(.!(exit_rows))
+            end
         end
+
     end
 
-end
+    @testset "get_last_update()" begin
+        import KidneyAllocation.get_last_update
+
+        df = CSV.read("data/unfiltered_outcomes.csv", DataFrame)
+        G = groupby(df, :CAN_ID)
+
+        (date, status) = get_last_update(G[1])
+        @test date == DateTime(2012, 04, 24, 14, 33, 41)
+        @test status == "TX"
+
+        (date, status) = get_last_update(G[2])
+        @test date == DateTime(2004, 1, 14, 22, 55, 12)
+        @test status == "TX"
+
+        (date, status) = get_last_update(G[3])
+        @test date == DateTime(2012, 7, 1, 17, 00, 10)
+        @test status == "TX"
+
+        (date, status) = get_last_update(G[4])
+        @test date == DateTime(2004, 4, 20, 0, 30, 14)
+        @test status == "X"
+
+        (date, status) = get_last_update(G[5])
+        @test date == DateTime(2023, 5, 24, 13, 57, 4)
+        @test status == "0"
+
+        (date, status) = get_last_update(G[6])
+        @test date == DateTime(2023, 5, 18, 10, 10, 51)
+        @test status == "1"
+    end
 
     @testset "infer_recipient_expiration_date" begin
         import KidneyAllocation.infer_recipient_expiration_date
@@ -94,7 +125,7 @@ end
         @test infer_recipient_expiration_date(g[1]) === nothing
         @test infer_recipient_expiration_date(g[2]) === nothing
         @test infer_recipient_expiration_date(g[3]) === nothing
-        @test infer_recipient_expiration_date(g[4]) == DateTime(2004,04,20,0,30,14)
+        @test infer_recipient_expiration_date(g[4]) == DateTime(2004, 04, 20, 0, 30, 14)
         @test infer_recipient_expiration_date(g[5]) === nothing
         @test infer_recipient_expiration_date(g[6]) === nothing
 
@@ -107,9 +138,9 @@ end
         df = CSV.read("data/filtered_outcomes.csv", DataFrame)
         g = groupby(df, :CAN_ID)
 
-        @test recipient_active_waiting_proportion(g[1]) ≈ .8855 atol=1e-4
+        @test recipient_active_waiting_proportion(g[1]) ≈ 0.8855 atol=1e-4
         @test recipient_active_waiting_proportion(g[2]) ≈ 1. atol=1e-4
-        @test recipient_active_waiting_proportion(g[3]) ≈ .7929 atol=1e-4
+        @test recipient_active_waiting_proportion(g[3]) ≈ 0.7929 atol=1e-4
         @test recipient_active_waiting_proportion(g[4]) ≈ 1. atol=1e-4
         @test recipient_active_waiting_proportion(g[5]) ≈ 1. atol=1e-4
         @test recipient_active_waiting_proportion(g[6]) ≈ 1. atol=1e-4

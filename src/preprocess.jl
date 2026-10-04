@@ -94,6 +94,26 @@ function check_df_at_most_one_exit_outcome(
 end
 
 """
+    get_last_update(df::AbstractDataFrame) -> Tuple{DateTime, String}
+
+Return the time and outcome of the most recent update retained by
+`filter_outcomes` for a single recipient. 
+"""
+function get_last_update(df::AbstractDataFrame)::Tuple{DateTime, String}
+
+    isempty(df) && throw(ArgumentError("DataFrame is empty"))
+
+    check_df_columns(df, :OUTCOME, :UPDATE_TM)
+    check_df_column_constant(df, :CAN_ID)
+
+    filtered_df = filter_outcomes(df)
+    last_index = argmax(filtered_df.UPDATE_TM)
+
+    return (filtered_df.UPDATE_TM[last_index], String(filtered_df.OUTCOME[last_index]))
+end
+
+
+"""
     infer_recipient_expiration_date(df::AbstractDataFrame) -> Union{Date,Nothing}
 
 Return the earliest recorded exit date for a single recipient.
@@ -113,6 +133,8 @@ function infer_recipient_expiration_date(df::AbstractDataFrame)::Union{DateTime,
     check_df_column_constant(df, :CAN_ID)
     
     isempty(df) && return nothing
+
+    filtered_df = filter_outcomes(df)
 
     exit_outcomes = ("X", "TX VIVANT", "DCD")
     exit_dates = DateTime[]
