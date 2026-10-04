@@ -140,35 +140,6 @@ function get_exit_date(df::AbstractDataFrame)::Union{DateTime,Nothing}
     return uppercase(strip(outcome)) ∈ exit_outcomes ? date : nothing
 end
 
-
-# """
-#     recipient_arrival_departure(df; future_date=Date(2100,1,1)) -> (arrival, departure)
-
-# Infer the arrival and departure dates of a single recipient from its status history.
-# If the recipient is still active at the most recent update, `future_date` is used
-# as the departure date.
-# """
-# function recipient_arrival_departure(df::AbstractDataFrame, future_date::Date=Date(2100, 1, 1))
-
-#     check_df_columns(df, :CAN_ID, :OUTCOME, :UPDATE_TM, :CAN_LISTING_DT)
-#     check_df_column_constant(df, :CAN_ID)
-
-#     # Sort the dataframe rows so that the most recent is on top
-#     idx = sortperm(df.UPDATE_TM; rev=true)
-#     outcomes = df.OUTCOME[idx]
-#     updates = df.UPDATE_TM[idx]
-
-#     arrival = df.CAN_LISTING_DT[1]
-
-#     if outcomes[1] == "1"
-#         departure = future_date # Arbitrary date after the end of the historic period
-#     else
-#         departure = updates[1] # Si transplanté ou retiré
-#     end
-
-#     return arrival, departure
-# end
-
 """
     first_exit_date(df::AbstractDataFrame) -> Union{DateTime,Nothing}
 
@@ -455,10 +426,10 @@ Cleaning steps:
 function load_recipient(filepath::AbstractString)
     df = CSV.read(filepath, DataFrame, missingstring=["-", "", "NULL"])
 
-    # Manually removing duplicated rows for TX (TODO check in new dataset version if these errors are still present)
-    if (df.OUTCOME[3104] == df.OUTCOME[3105]) & (df.UPDATE_TM[3104] == df.UPDATE_TM[3105])
-        deleteat!(df, 3104)
-    end
+    # # Manually removing duplicated rows for TX (TODO check in new dataset version if these errors are still present)
+    # if (df.OUTCOME[3104] == df.OUTCOME[3105]) & (df.UPDATE_TM[3104] == df.UPDATE_TM[3105])
+    #     deleteat!(df, 3104)
+    # end
 
     # Replacing the value 24L and 24Low with 24 for instance
     df.CAN_A2 = parse_hla_int.(df.CAN_A2)
@@ -666,3 +637,31 @@ function harmonize_col!(df::DataFrame; col::Symbol, idcol::Symbol=:CAN_ID)
     df[!, col] = coalesce.(df[!, col], getindex.(Ref(val_by_id), df[!, idcol]))
     return df
 end
+
+"""
+    retrieve_observed_waiting_list(recipient_filepath, date) -> Vector{Int64}
+
+Return the IDs of recipients registered on the waiting list at `date`, based
+on the recipient history stored in `recipient_filepath`.
+"""
+function retrieve_observed_waiting_list(recipient_filepath::String, date::DateTime)::Vector{Int64}
+
+    df = load_recipient(recipient_filepath)
+    registered_ids = Int64[]
+
+    for group in groupby(df, :CAN_ID)
+        filtered_group = filter_outcomes(group)
+
+        arrival_time = DateTime(first(filtered_group.CAN_LISTING_DT))
+        exit_time = get_exit_date(filtered_group)
+
+        if arrival_time ≤ date &&
+           (isnothing(exit_time) || date ≤ exit_time)
+            push!(registered_ids, first(filtered_group.CAN_ID))
+        end
+    end
+
+    return registered_ids
+end
+
+retrieve_observed_waiting_list(recipient_filepath::String, date::Date) = retrieve_observed_waiting_list(recipient_filepath, DateTime(date))
