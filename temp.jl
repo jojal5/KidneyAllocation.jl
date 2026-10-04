@@ -5,95 +5,40 @@ using CSV, DataFrames, Dates, Random, Test
 
 using KidneyAllocation
 
-import KidneyAllocation: has_expiration, is_expired, is_active, is_registered
-
-    birth = Date(1980, 1, 1)
-    arrival = Date(2024, 1, 1)
-    dialysis = Date(2015, 1, 1)
-
-    # Valid HLA alleles from your allowed sets
-    dr1 = HLA(1)
-    dr2 = HLA(4)
-    a1 = HLA(24)
-    a2 = HLA(26)
-    b1 = HLA(44)
-    b2 = HLA(51)
-
-    cpra = 30
-    blood = A   # ABOGroup.A
-
-    # --- Recipient without expiration date and always on active waiting (expiration_date = nothing) ---
-    r_noexp = Recipient(birth, dialysis, arrival, blood,
-        a1, a2, b1, b2, dr1, dr2,
-        cpra)
-
-    @test has_expiration(r_noexp) == false
-
-    t_before = Date(2023, 12, 31)
-    t_at_arrival = arrival
-    t_after = Date(2025, 1, 1)
-
-    # No expiration: never expired
-    @test is_expired(r_noexp, t_before) == false
-    @test is_expired(r_noexp, t_at_arrival) == false
-    @test is_expired(r_noexp, t_after) == false
-
-    # Registration for no-expiration recipient
-    @test is_registered(r_noexp, t_before) == false     # before arrival
-    @test is_registered(r_noexp, t_at_arrival) == true     # exactly at arrival
-    @test is_registered(r_noexp, t_after) == true      # after arrival, no expiration
-
-    # always active
-    @test is_active(r_noexp, t_before) == false     # before arrival
-    @test is_active(r_noexp, t_at_arrival) == true     # exactly at arrival
-    @test is_active(r_noexp, t_after) == true      # after arrival, no expiration
 
 
-    # --- Recipient with explicit expiration date, always active ---
-    exp_date = Date(2025, 1, 1)
-    r_exp = Recipient(birth, dialysis, arrival, blood,
-        a1, a2, b1, b2, dr1, dr2,
-        cpra; expiration_date=exp_date)
 
-    @test has_expiration(r_exp) == true
+"""
+    get_expiration_date(df::AbstractDataFrame) -> Union{DateTime,Nothing}
 
-    t_before_exp = Date(2024, 6, 1)
-    t_at_exp = exp_date
-    t_after_exp = Date(2025, 6, 1)
+Return the time of the latest retained update if its outcome indicates a
+permanent exit from the waiting list; otherwise return `nothing`.
+"""
+function get_expiration_date(df::AbstractDataFrame)::Union{DateTime,Nothing}
+    expiration_outcomes = ("X", "TX VIVANT", "DCD")
 
-    # Expired logic: uses strict < t
-    @test is_expired(r_exp, t_before_exp) == false
-    @test is_expired(r_exp, t_at_exp) == false   # equal → NOT expired
-    @test is_expired(r_exp, t_after_exp) == true    # after expiration → expired
+    date, outcome = get_last_update(df)
 
-    # Activity with expiration:
-    # - before arrival → inactive
-    # - between arrival and exp_date inclusive → active
-    # - after expiration → inactive
-    @test is_registered(r_exp, t_before) == false
-    @test is_registered(r_exp, arrival) == true
-    @test is_registered(r_exp, t_before_exp) == true
-    @test is_registered(r_exp, t_at_exp) == true
-    @test is_registered(r_exp, t_after_exp) == false
+    return uppercase(strip(outcome)) ∈ expiration_outcomes ? date : nothing
+end
 
-    @test is_active(r_exp, t_before) == false
-    @test is_active(r_exp, arrival) == true
-    @test is_active(r_exp, t_before_exp) == true
-    @test is_active(r_exp, t_at_exp) == true
-    @test is_active(r_exp, t_after_exp) == false
+@testset "get_expiration_date()" begin
+        import KidneyAllocation.get_expiration_date
 
-    # --- Recipient with explicit expiration date, active waiting proportion of 1/2 ---
-    exp_date = Date(2025, 1, 1)
-    r_exp = Recipient(birth, dialysis, arrival, blood,
-        a1, a2, b1, b2, dr1, dr2,
-        cpra; expiration_date=exp_date, active_waiting_proportion = .5)
+        df = CSV.read("data/unfiltered_outcomes.csv", DataFrame)
+        G = groupby(df, :CAN_ID)
 
-    rng = Random.MersenneTwister(12345)
-    @test is_active(r_exp, arrival, rng=rng) == false
-    rng = Random.MersenneTwister(123)
-    @test is_active(r_exp, arrival, rng=rng) == true
+        date = get_expiration_date(G[1])
+        @test date === nothing
 
+        date = get_expiration_date(G[4])
+        @test date == DateTime(2004, 4, 20, 0, 30, 14)
 
+        date = get_expiration_date(G[5])
+        @test date === nothing
+    end
+
+import KidneyAllocation.get_last_update
 
 # recipient_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Candidates.csv"
 

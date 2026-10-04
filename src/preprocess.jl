@@ -112,40 +112,53 @@ function get_last_update(df::AbstractDataFrame)::Tuple{DateTime, String}
     return (filtered_df.UPDATE_TM[last_index], String(filtered_df.OUTCOME[last_index]))
 end
 
-
 """
-    infer_recipient_expiration_date(df::AbstractDataFrame) -> Union{Date,Nothing}
+    get_expiration_date(df::AbstractDataFrame) -> Union{DateTime,Nothing}
 
-Return the earliest recorded exit date for a single recipient.
-
-`df` must contain the columns `:CAN_ID`, `:OUTCOME`, and `:UPDATE_TM`;
-all rows must belong to the same recipient. `:UPDATE_TM` must contain
-`Date` or `DateTime` values without missing entries.
-
-Outcome codes are matched case-insensitively. A permanent exit status is `"X"`,
-`"TX VIVANT"`, or `"DCD"`.
-
-Return `nothing` if no permanent exit status is recorded.
+Return the time of the latest retained update if its outcome indicates a
+permanent exit from the waiting list; otherwise return `nothing`.
 """
-function infer_recipient_expiration_date(df::AbstractDataFrame)::Union{DateTime,Nothing}
+function get_expiration_date(df::AbstractDataFrame)::Union{DateTime,Nothing}
+    expiration_outcomes = ("X", "TX VIVANT", "DCD")
 
-    check_df_columns(df, :CAN_ID, :OUTCOME, :UPDATE_TM)
-    check_df_column_constant(df, :CAN_ID)
-    
-    isempty(df) && return nothing
+    date, outcome = get_last_update(df)
 
-    filtered_df = filter_outcomes(df)
-
-    exit_outcomes = ("X", "TX VIVANT", "DCD")
-    exit_dates = DateTime[]
-
-    for row in eachrow(df)
-        outcome = uppercase(strip(string(row.OUTCOME)))
-        outcome ∈ exit_outcomes && push!(exit_dates, row.UPDATE_TM)
-    end
-
-    return isempty(exit_dates) ? nothing : minimum(exit_dates)
+    return uppercase(strip(outcome)) ∈ expiration_outcomes ? date : nothing
 end
+
+# """
+#     infer_recipient_expiration_date(df::AbstractDataFrame) -> Union{Date,Nothing}
+
+# Return the earliest recorded exit date for a single recipient.
+
+# `df` must contain the columns `:CAN_ID`, `:OUTCOME`, and `:UPDATE_TM`;
+# all rows must belong to the same recipient. `:UPDATE_TM` must contain
+# `Date` or `DateTime` values without missing entries.
+
+# Outcome codes are matched case-insensitively. A permanent exit status is `"X"`,
+# `"TX VIVANT"`, or `"DCD"`.
+
+# Return `nothing` if no permanent exit status is recorded.
+# """
+# function infer_recipient_expiration_date(df::AbstractDataFrame)::Union{DateTime,Nothing}
+
+#     check_df_columns(df, :CAN_ID, :OUTCOME, :UPDATE_TM)
+#     check_df_column_constant(df, :CAN_ID)
+    
+#     isempty(df) && return nothing
+
+#     filtered_df = filter_outcomes(df)
+
+#     exit_outcomes = ("X", "TX VIVANT", "DCD")
+#     exit_dates = DateTime[]
+
+#     for row in eachrow(df)
+#         outcome = uppercase(strip(string(row.OUTCOME)))
+#         outcome ∈ exit_outcomes && push!(exit_dates, row.UPDATE_TM)
+#     end
+
+#     return isempty(exit_dates) ? nothing : minimum(exit_dates)
+# end
 
 """
     recipient_arrival_departure(df; future_date=Date(2100,1,1)) -> (arrival, departure)
@@ -604,7 +617,8 @@ function build_recipient_registry(recipient_filepath::String, cpra_filepath::Str
 
         filtered_df = filter_outcomes(g)
 
-        exp_date = infer_recipient_expiration_date(filtered_df)
+        # exp_date = infer_recipient_expiration_date(filtered_df)
+        exp_date = get_expiration_date(filtered_df)
         active_waiting_proportion = recipient_active_waiting_proportion(filtered_df)
 
         r = first(filtered_df)

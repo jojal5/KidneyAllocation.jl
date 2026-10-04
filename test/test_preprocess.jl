@@ -115,21 +115,37 @@
         @test status == "1"
     end
 
-    @testset "infer_recipient_expiration_date" begin
-        import KidneyAllocation.infer_recipient_expiration_date
+    @testset "get_expiration_date()" begin
+        import KidneyAllocation.get_expiration_date
 
-        df = CSV.read("data/filtered_outcomes.csv", DataFrame)
+        df = CSV.read("data/unfiltered_outcomes.csv", DataFrame)
+        G = groupby(df, :CAN_ID)
 
-        g = groupby(df, :CAN_ID)
+        date = get_expiration_date(G[1])
+        @test date === nothing
 
-        @test infer_recipient_expiration_date(g[1]) === nothing
-        @test infer_recipient_expiration_date(g[2]) === nothing
-        @test infer_recipient_expiration_date(g[3]) === nothing
-        @test infer_recipient_expiration_date(g[4]) == DateTime(2004, 04, 20, 0, 30, 14)
-        @test infer_recipient_expiration_date(g[5]) === nothing
-        @test infer_recipient_expiration_date(g[6]) === nothing
+        date = get_expiration_date(G[4])
+        @test date == DateTime(2004, 4, 20, 0, 30, 14)
 
+        date = get_expiration_date(G[5])
+        @test date === nothing
     end
+
+    # @testset "infer_recipient_expiration_date" begin
+    #     import KidneyAllocation.infer_recipient_expiration_date
+
+    #     df = CSV.read("data/filtered_outcomes.csv", DataFrame)
+
+    #     g = groupby(df, :CAN_ID)
+
+    #     @test infer_recipient_expiration_date(g[1]) === nothing
+    #     @test infer_recipient_expiration_date(g[2]) === nothing
+    #     @test infer_recipient_expiration_date(g[3]) === nothing
+    #     @test infer_recipient_expiration_date(g[4]) == DateTime(2004, 04, 20, 0, 30, 14)
+    #     @test infer_recipient_expiration_date(g[5]) === nothing
+    #     @test infer_recipient_expiration_date(g[6]) === nothing
+
+    # end
 
     @testset "recipient_active_waiting_proportion" begin
 
