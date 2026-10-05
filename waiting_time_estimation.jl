@@ -102,7 +102,7 @@ end
 
 ## Selection of a recipient
 
-i = 2
+i = 3
 id = recipient_ids[i]
 
 recipient = recipient_registry[id]
@@ -139,75 +139,39 @@ initial_recipients[ind] == recipient
 
 nyears = 5
 
-id, arrival = KidneyAllocation.generate_arrivals(recipient_ids, recipient_arrival_rate;
-    origin =recipient.arrival, nyears = nyears)
-
-new_recipients = KidneyAllocation.reconstruct_recipients(recipient_registry, id, arrival)
+new_recipients = KidneyAllocation.generate_arrivals(recipient_registry, recipient_arrival_rate; origin=recipient.arrival, nyears=nyears)
 
 waiting_recipients = vcat(initial_recipients, new_recipients)
 
 # Verify the position of the considered recipient (Sanity check)
 waiting_recipients[ind] == recipient
-
-
-rand(keys(recipient_registry))
-
-import KidneyAllocation: sample_arrival_dates, reconstruct_recipients, generate_arrivals
-
-
-
-new_recipients = generate_arrivals(recipient_registry, recipient_arrival_rate; origin = recipient.arrival, nyears = nyears)
-
-
-import KidneyAllocation: sample_arrival_dates, reconstruct_recipients, reconstruct_donors
-
-
-
-
-
-# Number of new recipients
-nᵣ = rand(Poisson(recipient_arrival_rate * nyears)) 
-# Arrival dates                             
-tᵣ = KidneyAllocation.sample_days(recipient.arrival, recipient.arrival + Year(nyears), nᵣ)
-# Sampled CAN_ID
-sampled_can_id = rand(keys(recipient_registry), nᵣ)
-# Sampled recipients with the adjusted timeline 
-new_recipients = Vector{Recipient}(undef, nᵣ)
-for (i,id) in enumerate(sampled_can_id)
-    sampled_recipient = recipient_registry[id]
-    new_recipients[i] = KidneyAllocation.shift_recipient_timeline(sampled_recipient, tᵣ[i])
-end
-
-# Sanity check
-# KidneyAllocation.get_arrival.(new_recipients) == tᵣ
-
-waiting_recipients = vcat(initial_recipients, new_recipients)
-
-# Verify the position of the considered recipient (Sanity check)
-waiting_recipients[ind] == recipient
-
 
 ## Generate donor arrivals for the next nyears
 
-# Number of recipients
-nₒ = rand(Poisson(donor_arrival_rate * nyears)) 
-# Arrival dates                             
-tₒ = KidneyAllocation.sample_days(recipient.arrival, recipient.arrival + Year(nyears), nₒ)
-# Sampled DON_ID
-sampled_don_id = rand(keys(donor_registry), nₒ)
+kidney_by_id = KidneyAllocation.kidneys_given_by_donor(df_donors)
 
-## Sampled donors 
+donors = KidneyAllocation.generate_arrivals(donor_registry, kidney_by_id, donor_arrival_rate, origin = recipient.arrival,nyears=nyears)
 
-kidney_by_don_id = KidneyAllocation.kidneys_given_by_donor(df_donors)
 
-# Sampled donors with the adjusted arrival and the number of given kidneys
-donors = Donor[]
-for (i,id) in enumerate(sampled_don_id)
-    sampled_donor = donor_registry[id]
-    for j = 1:kidney_by_don_id[id]
-        push!(donors, KidneyAllocation.set_donor_arrival(sampled_donor, tₒ[i]))
-    end
-end
+# # Number of recipients
+# nₒ = rand(Poisson(donor_arrival_rate * nyears)) 
+# # Arrival dates                             
+# tₒ = KidneyAllocation.sample_days(recipient.arrival, recipient.arrival + Year(nyears), nₒ)
+# # Sampled DON_ID
+# sampled_don_id = rand(keys(donor_registry), nₒ)
+
+# ## Sampled donors 
+
+# kidney_by_don_id = KidneyAllocation.kidneys_given_by_donor(df_donors)
+
+# # Sampled donors with the adjusted arrival and the number of given kidneys
+# donors = Donor[]
+# for (i,id) in enumerate(sampled_don_id)
+#     sampled_donor = donor_registry[id]
+#     for j = 1:kidney_by_don_id[id]
+#         push!(donors, KidneyAllocation.set_donor_arrival(sampled_donor, tₒ[i]))
+#     end
+# end
 
 ## Load decision model
 

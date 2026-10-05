@@ -69,6 +69,7 @@ timelines to simulated arrival dates.
 """
 function generate_arrivals(
     registry::Dict{Int,Donor},
+    kidney_by_id::Dict{Int,Int},
     arrival_rate::Real;
     origin::Date,
     nyears::Int,
@@ -80,7 +81,16 @@ function generate_arrivals(
         ids, arrival_rate; origin, nyears, rng,
     )
 
-    return reconstruct_donors(registry, sampled_ids, sampled_arrivals)
+    multiple_sampled_ids = Int64[]
+    multiple_arrival_dates = Date[]
+
+    for (i, (id, arrival)) in enumerate(zip(sampled_ids, sampled_arrivals))
+        for j = 1:kidney_by_id[id]
+            push!(multiple_sampled_ids, id)
+            push!(multiple_arrival_dates, arrival)
+        end
+    end
+    return reconstruct_donors(registry, multiple_sampled_ids, multiple_arrival_dates)
 end
 
 
@@ -116,7 +126,7 @@ Return the donors identified by `ids` in the `donor_registry`, with arrival date
 `arrival_dates`.
 """
 function reconstruct_donors(
-    donor_registry::Dict{Int, Donor},
+    donor_registry::Dict{Int,Donor},
     ids::AbstractVector{<:Integer},
     arrival_dates::AbstractVector{Date},
 )::Vector{Donor}
@@ -153,12 +163,12 @@ function simulate_initial_state_indexed(
     donors::Vector{Donor},
     recipients::Vector{Recipient},
     dm::AbstractDecisionModel;
-    start_date::Date = Date(2014, 1, 1),
-    nyears::Int = 10,
-    donor_rate::Real = 148.0,
-    recipient_rate::Real = 272.83,
-    origin_date::Date = Date(2000, 1, 1),
-    rng::AbstractRNG = Random.default_rng(),
+    start_date::Date=Date(2014, 1, 1),
+    nyears::Int=10,
+    donor_rate::Real=148.0,
+    recipient_rate::Real=272.83,
+    origin_date::Date=Date(2000, 1, 1),
+    rng::AbstractRNG=Random.default_rng(),
 )
 
     simulation_end = start_date + Year(nyears)
@@ -171,7 +181,7 @@ function simulate_initial_state_indexed(
     # New recipient arrivals: registry indices + simulated arrival dates
     sampled_recipient_indices, sampled_recipient_arrival_dates =
         generate_arrivals(eachindex(recipients), recipient_rate;
-                          origin=start_date, nyears=nyears, rng=rng)
+            origin=start_date, nyears=nyears, rng=rng)
 
     append!(waiting_registry_indices, sampled_recipient_indices)
     append!(waiting_arrival_dates, sampled_recipient_arrival_dates)
@@ -179,7 +189,7 @@ function simulate_initial_state_indexed(
     # New donor arrivals (used only internally for allocation)
     sampled_donor_indices, sampled_donor_arrival_dates =
         generate_arrivals(eachindex(donors), donor_rate;
-                          origin=start_date, nyears=nyears, rng=rng)
+            origin=start_date, nyears=nyears, rng=rng)
 
     # Reconstruct temporary objects for allocation only
     waiting_recipients =
