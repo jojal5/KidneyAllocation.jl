@@ -93,11 +93,14 @@ end
 
 Sample `n` dates uniformly (with replacement) between `d1` and `d2` (inclusive).
 """
-function sample_days(d1::Date, d2::Date, n::Integer)::Vector{Date}
+function sample_days(d1::Date, d2::Date, n::Integer;
+rng::AbstractRNG = Random.default_rng(),
+)::Vector{Date}
+
     dmin, dmax = min(d1, d2), max(d1, d2)
 
     ndays = Dates.value(dmax - dmin) + 1
-    offsets = sort(rand(0:ndays-1, n))
+    offsets = sort(rand(rng, 0:ndays-1, n))
 
     return dmin .+ Day.(offsets)
 end

@@ -137,22 +137,33 @@ initial_recipients[ind] == recipient
 
 ## Generate recipient arrivals for the next nyears
 
-id, arrival = KidneyAllocation.generate_arrivals(recipient_ids, recipient_arrival_rate;
-    origin =recipient.arrival, nyears = 5)
-
-import KidneyAllocation.shift_recipient_timeline
-
-
-
-new_recipients = reconstruct_recipients(recipient_registry, id, arrival)
-
-
-
-
-
-
-
 nyears = 5
+
+id, arrival = KidneyAllocation.generate_arrivals(recipient_ids, recipient_arrival_rate;
+    origin =recipient.arrival, nyears = nyears)
+
+new_recipients = KidneyAllocation.reconstruct_recipients(recipient_registry, id, arrival)
+
+waiting_recipients = vcat(initial_recipients, new_recipients)
+
+# Verify the position of the considered recipient (Sanity check)
+waiting_recipients[ind] == recipient
+
+
+rand(keys(recipient_registry))
+
+import KidneyAllocation: sample_arrival_dates, reconstruct_recipients, generate_arrivals
+
+
+
+new_recipients = generate_arrivals(recipient_registry, recipient_arrival_rate; origin = recipient.arrival, nyears = nyears)
+
+
+import KidneyAllocation: sample_arrival_dates, reconstruct_recipients, reconstruct_donors
+
+
+
+
 
 # Number of new recipients
 nᵣ = rand(Poisson(recipient_arrival_rate * nyears)) 

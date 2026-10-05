@@ -1,32 +1,89 @@
 
-"""
-    sample_arrival_dates(origin, sim_end, n) -> Vector{Date}
+# """
+#     sample_arrival_dates(origin, sim_end, n) -> Vector{Date}
 
-Sample `n` dates uniformly in [`origin`, `sim_end`].
-"""
-sample_arrival_dates(origin::Date, sim_end::Date, n::Integer) =
-    KidneyAllocation.sample_days(origin, sim_end, n)
+# Sample `n` dates uniformly in [`origin`, `sim_end`].
+# """
+# sample_arrival_dates(origin::Date, sim_end::Date, n::Integer) =
+#     KidneyAllocation.sample_days(origin, sim_end, n)
 
 """
-    generate_arrivals(indices, arrival_rate; origin, nyears, rng) -> (sampled_indices, arrival_dates)
+    generate_arrivals(ids, arrival_rate; origin, nyears, rng) ->
+        (sampled_ids, arrival_dates)
 
-Sample a Poisson number of arrivals and return resampled `indices` with uniformly sampled arrival dates over the simulation window.
+Generate a Poisson number of arrivals with mean `arrival_rate * nyears`.
+Return identifiers sampled with replacement from `ids` and uniformly sampled
+arrival dates over the simulation window.
 """
-function generate_arrivals(indices::AbstractVector{<:Int}, arrival_rate::Real;
-    origin::Date = Date(2000, 1, 1),
-    nyears::Int = 10,
-    rng::AbstractRNG = Random.default_rng())
-
-    sim_end = origin + Year(nyears)
+function generate_arrivals(
+    ids::AbstractVector{<:Int},
+    arrival_rate::Real;
+    origin,
+    nyears,
+    rng::AbstractRNG=Random.default_rng(),
+)
+    arrival_rate ≥ 0 ||
+        throw(ArgumentError("`arrival_rate` must be non-negative"))
+    nyears ≥ 0 ||
+        throw(ArgumentError("`nyears` must be non-negative"))
 
     n_arrivals = rand(rng, Poisson(arrival_rate * nyears))
+    n_arrivals > 0 && isempty(ids) &&
+        throw(ArgumentError("`ids` cannot be empty when generating arrivals"))
 
-    arrival_dates = KidneyAllocation.sample_arrival_dates(origin, sim_end, n_arrivals)
-    sampled_indices = rand(rng, indices, n_arrivals)
+    sim_end = origin + Year(nyears)
+    arrival_dates = sample_days(origin, sim_end, n_arrivals; rng=rng)
+    sampled_ids = rand(rng, ids, n_arrivals)
 
-    return sampled_indices, arrival_dates
-
+    return sampled_ids, arrival_dates
 end
+
+"""
+    generate_arrivals(registry::Dict{Int,Recipient}, arrival_rate; ...) ->
+        Vector{Recipient}
+
+Generate recipient arrivals by sampling registry templates and shifting their
+timelines to simulated arrival dates.
+"""
+function generate_arrivals(
+    registry::Dict{Int,Recipient},
+    arrival_rate::Real;
+    origin::Date,
+    nyears::Int,
+    rng::AbstractRNG=Random.default_rng(),
+)::Vector{Recipient}
+
+    ids = collect(keys(registry))
+    sampled_ids, sampled_arrivals = generate_arrivals(
+        ids, arrival_rate; origin, nyears, rng,
+    )
+
+    return reconstruct_recipients(registry, sampled_ids, sampled_arrivals)
+end
+
+"""
+    generate_arrivals(registry::Dict{Int,Donor}, arrival_rate; ...) -> Vector{Donor}
+
+Generate donor arrivals by sampling registry templates and shifting their
+timelines to simulated arrival dates.
+"""
+function generate_arrivals(
+    registry::Dict{Int,Donor},
+    arrival_rate::Real;
+    origin::Date,
+    nyears::Int,
+    rng::AbstractRNG=Random.default_rng(),
+)::Vector{Donor}
+
+    ids = collect(keys(registry))
+    sampled_ids, sampled_arrivals = generate_arrivals(
+        ids, arrival_rate; origin, nyears, rng,
+    )
+
+    return reconstruct_donors(registry, sampled_ids, sampled_arrivals)
+end
+
+
 
 """
     reconstruct_recipients(recipient_registry, ids, arrival_dates) -> Vector{Recipient}
