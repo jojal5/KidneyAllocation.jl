@@ -29,24 +29,24 @@ function generate_arrivals(indices::AbstractVector{<:Int}, arrival_rate::Real;
 end
 
 """
-    reconstruct_recipients(recipients, indices, arrival_dates) -> Vector{Recipient}
+    reconstruct_recipients(recipient_registry, ids, arrival_dates) -> Vector{Recipient}
 
-Return `recipients[indices[i]]` with timelines shifted to `arrival_dates[i]`.
+Return the recipients identified by `ids` in the `recipient_registry`, with each timeline shifted so that
+its arrival date equals the corresponding value in `arrival_dates`.
 """
 function reconstruct_recipients(
-    recipients::AbstractVector{Recipient},
-    indices::AbstractVector{<:Integer},
-    arrival_dates::AbstractVector{<:Date},
+    recipient_registry::Dict{Int,Recipient},
+    ids::AbstractVector{<:Integer},
+    arrival_dates::AbstractVector{Date},
 )::Vector{Recipient}
 
-    length(indices) == length(arrival_dates) ||
-        throw(ArgumentError("`indices` and `arrival_dates` must have the same length"))
+    length(ids) == length(arrival_dates) ||
+        throw(ArgumentError("`ids` and `arrival_dates` must have the same length"))
 
-    n = length(indices)
-    reconstructed = Vector{Recipient}(undef, n)
+    reconstructed = Vector{Recipient}(undef, length(ids))
 
-    @inbounds for i in 1:n
-        reconstructed[i] = shift_recipient_timeline(recipients[indices[i]], arrival_dates[i])
+    for (i, (recipient_id, arrival_date)) in enumerate(zip(ids, arrival_dates))
+        reconstructed[i] = shift_recipient_timeline(recipient_registry[recipient_id], arrival_date)
     end
 
     return reconstructed

@@ -25,9 +25,12 @@
 
     @testset "reconstruct_recipients" begin
         import KidneyAllocation: get_HLA, reconstruct_recipients
+
+        recipient_registry = Dict{Int,Recipient}(i => recipient for (i, recipient) in enumerate(recipients))
+
         idx = [1,3]
         dates = [Date(2000,1,10), Date(2000,2,20)]
-        rec = reconstruct_recipients(recipients, idx, dates)
+        rec = reconstruct_recipients(recipient_registry, idx, dates)
         @test length(rec) == length(idx)
 
         for i in eachindex(idx)

@@ -67,20 +67,15 @@ donor_registry = KidneyAllocation.build_donor_registry(donor_filepath)
 #     end  
 # end
 
-## Dictionary of exit statuses and date of exit
+## Dictionary of last statuses
 
-exit_status = Dict{Int64, Tuple{String, DateTime}}()
+last_status = Dict{Int64, Tuple{DateTime, String}}()
 
-for k in keys(recipient_registry)
-
-    g = filter(row->row.CAN_ID == k, df_recipient)
-    filtered_df = KidneyAllocation.filter_outcomes(g)
-    sort!(filtered_df, :UPDATE_TM, rev= true)
-
-    exit_status[k] = (filtered_df.OUTCOME[1], filtered_df.UPDATE_TM[1])
-
+for g in groupby(df_recipient, :CAN_ID)
+    last_status[g.CAN_ID[1]] = KidneyAllocation.get_last_update(g)
 end
 
+last_status[3]
 
 ## Retrieve transplanted recipients for which waiting time has to be estimated
 
@@ -93,9 +88,12 @@ recipient_ids = Int64[]
 
 for id in keys(recipient_registry)
     r = recipient_registry[id]
+    date = first(last_status[id])
+    status = uppercase(strip(last(last_status[id])))
+
     if r.arrival ≥ Date(2012,1,1) && r.arrival < Date(2020,1,1)
         if r.cpra ≤ 80
-            if first(exit_status[id]) == "TX"  && last(exit_status[id])< Date(2020,1,1)
+            if status == "TX" && date < Date(2020,1,1)
                 push!(recipient_ids, id)
             end
         end
@@ -104,27 +102,31 @@ end
 
 ## Selection of a recipient
 
-i = 4
+i = 2
 id = recipient_ids[i]
 
 recipient = recipient_registry[id]
 
 ## Retrieve the outcome and the date of exit (if any)
 
-exit_status[id]
+last_status[id]
 
-obs_waiting_time = Date(last(exit_status[id])) - Date(recipient.arrival)
+obs_waiting_time = Date(first(last_status[id])) - Date(recipient.arrival)
 
 filter(row -> row.CAN_ID == id, df_recipient)
 
 ## Retrieve the waiting list when recipient arrived
 
-# TODO: il faut retirer les patients qui ont été transplantés
+df = filter(row -> row.CAN_ID == id, df_recipient)
+date = first(df.CAN_LISTING_DT)
+
+initial_recipient_ids = KidneyAllocation.retrieve_observed_waiting_list(recipient_filepath, date)
+
 initial_recipients = Recipient[]
 
-for k in keys(recipient_registry)
-    if KidneyAllocation.is_registered(recipient_registry[k], recipient.arrival)
-        push!(initial_recipients, recipient_registry[k])
+for id in initial_recipient_ids
+    if id in keys(recipient_registry)
+        push!(initial_recipients, recipient_registry[id])
     end
 end
 
@@ -132,7 +134,23 @@ ind = findfirst(initial_recipients .== recipient)
 # Sanity check
 initial_recipients[ind] == recipient
 
+
 ## Generate recipient arrivals for the next nyears
+
+id, arrival = KidneyAllocation.generate_arrivals(recipient_ids, recipient_arrival_rate;
+    origin =recipient.arrival, nyears = 5)
+
+import KidneyAllocation.shift_recipient_timeline
+
+
+
+new_recipients = reconstruct_recipients(recipient_registry, id, arrival)
+
+
+
+
+
+
 
 nyears = 5
 
