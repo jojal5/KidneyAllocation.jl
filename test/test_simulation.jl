@@ -50,7 +50,9 @@
         idx = [1]
         dates = [Date(2000,3,3)]
 
-        don = reconstruct_donors(donors, idx, dates)
+        donor_registry = Dict{Int, Donor}(i => donor for (i, donor) in enumerate(donors))
+
+        don = reconstruct_donors(donor_registry, idx, dates)
         @test length(don) == length(idx)
 
         for i in eachindex(idx)

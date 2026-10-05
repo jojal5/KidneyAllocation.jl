@@ -53,24 +53,24 @@ function reconstruct_recipients(
 end
 
 """
-    reconstruct_donors(donors, indices, arrival_dates) -> Vector{Donor}
+    reconstruct_donors(donors_registry, ids, arrival_dates) -> Vector{Donor}
 
-Return `donors[indices[i]]` with arrival set to `arrival_dates[i]`.
+Return the donors identified by `ids` in the `donor_registry`, with arrival dates shifted to
+`arrival_dates`.
 """
 function reconstruct_donors(
-    donors::AbstractVector{Donor},
-    indices::AbstractVector{<:Integer},
-    arrival_dates::AbstractVector{<:Date},
+    donor_registry::Dict{Int, Donor},
+    ids::AbstractVector{<:Integer},
+    arrival_dates::AbstractVector{Date},
 )::Vector{Donor}
 
-    length(indices) == length(arrival_dates) ||
-        throw(ArgumentError("`indices` and `arrival_dates` must have the same length"))
+    length(ids) == length(arrival_dates) ||
+        throw(ArgumentError("`ids` and `arrival_dates` must have the same length"))
 
-    n = length(indices)
-    reconstructed = Vector{Donor}(undef, n)
+    reconstructed = Vector{Donor}(undef, length(ids))
 
-    @inbounds for i in 1:n
-        reconstructed[i] = set_donor_arrival(donors[indices[i]], arrival_dates[i])
+    for (i, (id, arrival_date)) in enumerate(zip(ids, arrival_dates))
+        reconstructed[i] = set_donor_arrival(donor_registry[id], arrival_date)
     end
 
     return reconstructed
