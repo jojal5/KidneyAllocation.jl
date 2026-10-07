@@ -99,9 +99,11 @@ data_validation = filter(row -> row.LEARNING_SET == "validation", data)
 using GLM
 import KidneyAllocation: auc, brier_score
 
-model = @formula(DECISION ~ log(KDRI) + CAN_AGE * KDRI * CAN_WAIT + CAN_AGE^2 * KDRI * CAN_WAIT^2 + CAN_BLOOD + CPRA + DON_CAN_SCORE) # 0.8754
+# model = @formula(DECISION ~ log(KDRI) + CAN_AGE * KDRI * CAN_WAIT + CAN_AGE^2 * KDRI * CAN_WAIT^2 + CAN_BLOOD + CPRA + DON_CAN_SCORE)
 # model = @formula(DECISION ~ log(KDRI) + CAN_BLOOD + CAN_WAIT + CAN_WAIT^2 + CPRA + CPRA^2 + CAN_AGE + CAN_AGE^2 + DON_CAN_SCORE)
 # model = @formula(DECISION ~ KDRI + CAN_AGE * KDRI * CAN_WAIT + CAN_AGE^2 * KDRI * CAN_WAIT^2 + CAN_BLOOD + CPRA + DON_CAN_SCORE)
+
+model = @formula(DECISION ~ log(KDRI)*CAN_AGE + CAN_BLOOD)
 
 fm = glm(model, data_train, Bernoulli(), LogitLink())
 
@@ -128,7 +130,7 @@ u = KidneyAllocation.fit_threshold_f1(data.DECISION, GLM.predict(fm))
 
 dm = GLMDecisionModel(fm, u)
 
-# jldsave("src/SyntheticData/GLMDecisionModel.jld2"; dm)
+jldsave("src/SyntheticData/GLMDecisionModel.jld2"; dm)
 
 
 ## test
@@ -164,7 +166,7 @@ features = Symbol.([
     "is_bloodtype_AB"])
 
 m = DecisionTreeClassifier(
-    max_depth=10, min_samples_leaf=75,
+    max_depth=10, min_samples_leaf=175,
     pruning_purity_threshold=1
 )
 
@@ -206,11 +208,6 @@ features = Symbol.([
     "is_bloodtype_A"
     "is_bloodtype_B"
     "is_bloodtype_AB"])
-
-m = DecisionTreeClassifier(
-    max_depth=10, min_samples_leaf=75,
-    pruning_purity_threshold=1
-)
 
 X = KidneyAllocation.construct_feature_matrix_from_df(data, features)
 y = data.DECISION

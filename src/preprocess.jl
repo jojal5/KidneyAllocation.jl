@@ -286,6 +286,29 @@ function fill_hla_pairs!(df::AbstractDataFrame, prefix::AbstractString)
 end
 
 """
+    filter_offers_until_last_acceptance(df_donors::AbstractDataFrame) -> DataFrame
+
+For each donor, retain offers up to and including the last recipient with
+status `"TX"` after sorting recipients by decreasing score.
+"""
+function filter_offers_until_last_acceptance(df_donors::AbstractDataFrame)::DataFrame
+    filtered_df = similar(df_donors, 0)
+
+    for donor_df in groupby(df_donors, :DON_ID)
+        ranked_df = sort(donor_df, :DON_CAN_SCORE, rev=true)
+
+        last_acceptance = findlast(isequal("TX"), ranked_df.STATUS)
+
+        if !isnothing(last_acceptance)
+            append!(filtered_df, first(ranked_df, last_acceptance))
+        end
+
+    end
+
+    return filtered_df
+end
+
+"""
     load_donor(filepath::String) -> DataFrame
 
 Load a CSV file containing donor information and return a cleaned `DataFrame`.
@@ -294,11 +317,19 @@ Load a CSV file containing donor information and return a cleaned `DataFrame`.
 Cleaning steps:
 - Remove donors for which the decision status (`DECISION`) is missing.
 - Keep only donors attributed to List 5 (Administrative to Transplant Québec).
+- Keep only recipients who would have been offered a kidney using `filter_offers_until_last_acceptance`,
 - Drop administrative columns not required for downstream processing.
 - Replace `WEIGHT = 0`` and `HEIGHT = 0` by `missing`.
 """
 function load_donor(filepath::String)
-    df = CSV.read(filepath, DataFrame; missingstring=["-", "", "NULL"])
+    df_donors = CSV.read(filepath, DataFrame; missingstring=["-", "", "NULL"])
+
+    dropmissing!(df_donors, [:DECISION])
+
+    # Only attribution type 5
+    filter!(row -> row.ATT_TYPE == 5, df_donors)
+
+    df = filter_offers_until_last_acceptance(df_donors)
 
     fill_hla_pairs!(df, "DON")
 
@@ -307,11 +338,6 @@ function load_donor(filepath::String)
     for col in col_to_harmonize
         harmonize_col!(df, col=col, idcol=:DON_ID)
     end
-
-    dropmissing!(df, [:DECISION])
-
-    # Only attribution type 5
-    filter!(row -> row.ATT_TYPE == 5, df)
 
     cols_to_drop = [:DON_LAB_DT_TM, :ATT_TYPE]
     select!(df, Not(cols_to_drop))

@@ -222,8 +222,8 @@ Simulate the recipient compatibility based on CPRA for any given donor. Return `
 Compatibility is simulated as a Bernoulli trial with probability
 `1 - recipient.cpra/100`.
 """
-function sim_cpra_compatibility(recipient::Recipient)
-    return rand() ≥ recipient.cpra / 100
+function sim_cpra_compatibility(recipient::Recipient; rng::AbstractRNG=Random.default_rng())
+    return rand(rng) ≥ recipient.cpra / 100
 end
 
 

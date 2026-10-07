@@ -138,7 +138,7 @@
         G = groupby(df, :CAN_ID)
 
         date = get_exit_date(G[1])
-        @test date === DateTime(2012,4,24,14,33,41)
+        @test date === DateTime(2012, 4, 24, 14, 33, 41)
 
         date = get_exit_date(G[4])
         @test date == DateTime(2004, 4, 20, 0, 30, 14)
@@ -335,5 +335,35 @@
 
     end
 
+end
+
+@testset "offered_recipients()" begin
+
+    import KidneyAllocation.filter_offers_until_last_acceptance
+
+    # Single row transplanted
+    df = DataFrame(DON_ID=1, STATUS="TX", DON_CAN_SCORE=30)
+    df_offered = filter_offers_until_last_acceptance(df)
+    @test df_offered.DON_CAN_SCORE == [30]
+
+    # The first offer is refused, but the second is accepted (not sorted)
+    df = DataFrame(DON_ID=[1, 1], STATUS=["TX", missing], DON_CAN_SCORE=[29, 30])
+    df_offered = filter_offers_until_last_acceptance(df)
+    @test df_offered.DON_CAN_SCORE == [30, 29]
+
+    # All the offers are refused
+    df = DataFrame(DON_ID=[1, 1], STATUS=[missing, missing], DON_CAN_SCORE=[30, 29])
+    df_offered = filter_offers_until_last_acceptance(df)
+    @test isempty(df_offered)
+
+    # The fourth offers is the last accepted.
+    df = DataFrame(DON_ID=1, STATUS=[missing, "TX", missing, "TX", missing], DON_CAN_SCORE=[30, 29, 28, 27, 26])
+    df_offered = filter_offers_until_last_acceptance(df)
+    @test df_offered.DON_CAN_SCORE == [30, 29, 28, 27]
+
+    # Three offers are marked as TX (we keep all of them)
+    df = DataFrame(DON_ID=1, STATUS=[missing, "TX", missing, "TX", "TX"], DON_CAN_SCORE=[30, 29, 28, 27, 26])
+    df_offered = filter_offers_until_last_acceptance(df)
+    @test df_offered.DON_CAN_SCORE == [30, 29, 28, 27, 26]
 end
 

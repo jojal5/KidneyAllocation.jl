@@ -5,6 +5,106 @@ using CSV, DataFrames, Dates, Random, Test
 
 using KidneyAllocation
 
+import KidneyAllocation.filter_offers_until_last_acceptance
+
+        # Single row transplanted
+        df = DataFrame(DON_ID=1, STATUS="TX", DON_CAN_SCORE=30)
+        df_offered = filter_offers_until_last_acceptance(df)
+        @test df_offered.DON_CAN_SCORE == [30]
+
+df = DataFrame(DON_ID=[1, 1], STATUS=["TX", missing], DON_CAN_SCORE=[29, 30])
+        df_offered = filter_offers_until_last_acceptance(df)
+        @test df_offered.DON_CAN_SCORE == [30, 29]
+
+        df = DataFrame(DON_ID=[1, 1], STATUS=[missing, missing], DON_CAN_SCORE=[30, 29])
+        df_offered = filter_offers_until_last_acceptance(df)
+        @test isempty(df_offered)
+
+
+df = DataFrame(DON_ID=1, STATUS=[missing, "TX", missing, "TX", missing], DON_CAN_SCORE=[30, 29, 28, 27, 26])
+        df_offered = filter_offers_until_last_acceptance(df)
+        @test df_offered.DON_CAN_SCORE == [30, 29, 28, 27]
+
+# Three offers are wrongly marked as TX.
+        df = DataFrame(DON_ID=1, STATUS=[missing, "TX", missing, "TX", "TX"], DON_CAN_SCORE=[30, 29, 28, 27, 26])
+        df_offered = filter_offers_until_last_acceptance(df)
+        @test df_offered.DON_CAN_SCORE == [30, 29, 28, 27, 26]
+
+
+
+recipient_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Candidates.csv"
+cpra_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/CandidatesCPRA.csv"
+donor_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Donors.csv"
+
+
+
+
+
+
+"""
+    filter_offers_until_last_acceptance(df_donors::AbstractDataFrame) -> DataFrame
+
+For each donor, retain offers up to and including the last recipient with
+status `"TX"` after sorting recipients by decreasing score.
+"""
+function filter_offers_until_last_acceptance(df_donors::AbstractDataFrame)::DataFrame
+    filtered_df = similar(df_donors, 0)
+
+    for donor_df in groupby(df_donors, :DON_ID)
+        ranked_df = sort(donor_df, :DON_CAN_SCORE, rev=true)
+
+        last_acceptance = findlast(isequal("TX"), ranked_df.STATUS)
+
+        if !isnothing(last_acceptance)
+            append!(filtered_df, first(ranked_df, last_acceptance))
+        end
+
+    end
+
+    return filtered_df
+end
+
+df = filter_offers_until_last_acceptance(df_donors)
+
+
+
+
+
+
+
+
+
+
+g = groupby(df_donors,:DON_ID)[2]
+sorted_df = sort(g, :DON_CAN_SCORE)
+ind = findlast(isequal("TX"), sorted_df.STATUS)
+first(sorted_df, ind)
+
+
+sdf = filter(row -> row.DON_ID == 1117, df_donors)
+
+sort!(sdf, :DON_CAN_SCORE, rev=true)
+ind = findlast(isequal("TX"), sdf.STATUS)
+
+append!(df, sdf[1:ind, :])
+
+count(sdf.STA)
+
+
+
+
+
+unique(df_donors.STATUS)
+
+
+
+
+
+println("fin")
+
+
+
+
 
 
 # recipient_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Candidates.csv"
@@ -41,13 +141,57 @@ using KidneyAllocation
 
 
 
+# """
+#     get_offers(recipient, donors, recipients, is_unallocated; ...)
 
+# Retrieve the offers from `donors` that the `reciepient` would has been offered considering the `recipients` on the waiting list. 
+# """
+# function get_offers(recipient::Recipient,
+#     donors::Vector{Donor}, 
+#     recipients::Vector{Recipient},
+#     is_unallocated::AbstractVector{<:Bool}=trues(length(recipients));
+#     mode::Symbol=:random,
+#     rng::AbstractRNG=Random.default_rng(),
+# )
 
+#     offers = Vector{Donor}[]
 
+#     for donor in donors
 
+#         recipient_eligibility = is_abo_compatible(donor, recipient) && is_active(recipient, donor.arrival) && sim_cpra_compatibility(recipient)
+#         recipient_score = score(donor, recipient)
+    
+#         ind = get_eligible_recipient_indices(donor, recipients, is_unallocated)
 
+#         ranked_indices = rank_eligible_recipient_indices(donor, recipients, is_unallocated)
 
+#         ind =  allocate_one_donor(donor, recipients, dm, ranked_indices; mode=mode, rng=rng)
 
+#         s = KidneyAllocation.score.(donor, recipients[ind])
+
+#         p = sortperm(scores; rev=true)
+#         s = s[p]
+#         ind = ind[p]
+
+#         decision = decide.(dm, recipients[ind], donor; mode=mode, rng=rng)
+
+#         accpos = findfirst(decision)
+
+#         # If no recipient have accepted the offer, then the considered recipients would also been offered
+#         if !isempty(accpos)
+#             is_unallocated[ind[accpos]] = false
+#         else
+#             push!(offers, donor)
+#         end
+
+#         # If the considered recipient is eligible, and the first recipient that have accepted the offer has a score lower then the considered recipient, then the considered recipient would has been offerred.
+#         if recipient_eligibility && recipient_score > s[ind[indacc]]
+#             push!(offers, donor)
+#         end
+
+#     end
+
+# end
 
 
 

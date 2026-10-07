@@ -138,11 +138,16 @@ function decide(
     end
 end
 
+"""
+    decide(dm, recipient, donor; kwargs...) -> Bool
+
+Return whether `recipient` accepts an offer from `donor` under `dm`.
+"""
 function decide(
     dm::AbstractDecisionModel,
     recipient::Recipient,
     donor::Donor;
     kwargs...,
-)
+)::Bool
     return only(decide(dm, [recipient], donor; kwargs...))
 end
