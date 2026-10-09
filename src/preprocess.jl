@@ -471,27 +471,31 @@ function load_recipient(filepath::AbstractString)
     # Keeping only the recipients for kidney transplant
     filter!(row -> uppercase(row.OUTCOME) ∈ ("TX", "1", "0", "X", "DCD", "TX VIVANT"), df)
 
-    # # Keeping only the first outcome for each recipient. Some recipients are registered more than once and key information are lost for the additional registration
-    # filter_outcomes
-
     # Removing the recipient where the dialysis time is missing. It happens for recipients that received a kidney from a living donor.
     dropmissing!(df, [:CAN_DIAL_DT])
 
-    # # If listing time is missing, replacing it by the dialysis time. If listing is before dialysis, set listing = dialysis
-    # enforce_listing_after_dialysis!(df)
-
     # If listing time is missing, replacing it by the dialysis time.
     coalesce_listing!(df)
+
+    # Keeping only adult recipients
+    filter!(row -> years_between(row.CAN_BTH_DT, row.CAN_LISTING_DT) > 17, df)
+
+    # # Keeping only the first outcome for each recipient. Some recipients are registered more than once and key information are lost for the additional registration
+    filtered_df = similar(df, 0)
+    for g in groupby(df, :CAN_ID)
+        append!(filtered_df, filter_outcomes(g))
+    end
+    # filter_outcomes
+
+    # # If listing time is missing, replacing it by the dialysis time. If listing is before dialysis, set listing = dialysis
+    # enforce_listing_after_dialysis!(df)
 
     # Transform DateTime in Date
     # df.CAN_LISTING_DT = Date.(df.CAN_LISTING_DT)
     # df.CAN_DIAL_DT = Date.(df.CAN_DIAL_DT)
     # df.UPDATE_TM = passmissing(Date).(df.UPDATE_TM)
 
-    # Keeping only adult recipients
-    filter!(row -> years_between(row.CAN_BTH_DT, row.CAN_LISTING_DT) > 17, df)
-
-    return df
+    return filtered_df
 end
 
 """
@@ -691,3 +695,59 @@ function retrieve_observed_waiting_list(recipient_filepath::String, date::DateTi
 end
 
 retrieve_observed_waiting_list(recipient_filepath::String, date::Date) = retrieve_observed_waiting_list(recipient_filepath, DateTime(date))
+
+"""
+    count_recipient_arrivals(df, start_time, end_time) -> Int
+
+Return the number of distinct recipients whose listing date lies in
+`[start_time, end_time)`.
+"""
+function count_recipient_arrivals(df::AbstractDataFrame, start_time::DateTime, end_time::DateTime)::Int
+
+    check_df_columns(df, :CAN_ID, :CAN_LISTING_DT)
+
+    start_time ≤ end_time || throw(ArgumentError("`start_time` must not be after `end_time`"))
+
+    n_recipients = 0
+
+    for recipient_df in groupby(df, :CAN_ID)
+        listing_time = DateTime(first(recipient_df.CAN_LISTING_DT))
+
+        if start_time ≤ listing_time < end_time
+            n_recipients += 1
+        end
+    end
+
+    return n_recipients
+end
+
+
+"""
+    count_donor_arrivals(df, start_time, end_time) -> Int
+
+Return the number of distinct donors whose death time lies in
+`[start_time, end_time)`.
+"""
+function count_donor_arrivals(
+    df::AbstractDataFrame,
+    start_time::DateTime,
+    end_time::DateTime,
+)::Int
+
+    check_df_columns(df, :DON_ID, :DON_DEATH_TM)
+
+    start_time ≤ end_time ||
+        throw(ArgumentError("`start_time` must not be after `end_time`"))
+
+    n_donors = 0
+
+    for donor_df in groupby(df, :DON_ID)
+        donor_arrival_time = DateTime(first(donor_df.DON_DEATH_TM))
+
+        if start_time ≤ donor_arrival_time < end_time
+            n_donors += 1
+        end
+    end
+
+    return n_donors
+end

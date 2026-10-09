@@ -67,6 +67,8 @@
     @test_throws ArgumentError Donor(arrival, age, blood,
         a1, a2, b1, b2,
         dr1, dr2, -1.0)
+
+    @test KidneyAllocation.get_kdri(d) ≈ kdri
 end
 
 
@@ -82,6 +84,7 @@ end
         HLA(44), HLA(52),
         HLA(7), HLA(15),
         1.23)
+
 
     new_arrival = Date(2025, 1, 1)
 

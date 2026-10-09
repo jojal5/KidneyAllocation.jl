@@ -76,7 +76,7 @@ end
 
 Return a copy of `donor` with the arrival date replaced by `new_arrival`.
 
-## Details
+# Details
 
 All other donor attributes (age, blood group, HLA antigens, KDRI) are preserved.
 """
@@ -88,6 +88,15 @@ function set_donor_arrival(donor::Donor, new_arrival::Date)::Donor
                  donor.b1, donor.b2,
                  donor.dr1, donor.dr2,
                  donor.kdri)
+end
+
+"""
+    get_kdri(d::Donor)
+
+Get kdri of donor `d`.
+"""
+function get_kdri(d::Donor)
+    return d.kdri
 end
 
 

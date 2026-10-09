@@ -1,20 +1,20 @@
 @testset "simulation.jl" begin
     rng = MersenneTwister(42)
-    origin = Date(2000,1,1)
+    origin = Date(2000, 1, 1)
 
     # Registry (tiny and fakes)
     recipients = [
-        Recipient(Date(1979,1,1), Date(1995,1,1), Date(1998,1,1), O, 68, 203, 39, 77, 15, 17, 0),
-        Recipient(Date(1981,1,1), Date(1997,1,1), Date(2000,6,1), A, 69, 2403, 7, 35, 4, 103, 10),
-        Recipient(Date(1963,1,1), Date(1998,1,1), Date(2001,5,1), B, 25, 68, 67, 5102, 11, 16, 20),
+        Recipient(Date(1979, 1, 1), Date(1995, 1, 1), Date(1998, 1, 1), O, 68, 203, 39, 77, 15, 17, 0),
+        Recipient(Date(1981, 1, 1), Date(1997, 1, 1), Date(2000, 6, 1), A, 69, 2403, 7, 35, 4, 103, 10),
+        Recipient(Date(1963, 1, 1), Date(1998, 1, 1), Date(2001, 5, 1), B, 25, 68, 67, 5102, 11, 16, 20),
     ]
     donors = [
-        Donor(Date(2000,1,1), 40, O, 34, 3401, 73, 77, 3, 17, 1.5),
-        Donor(Date(2001,1,1), 55, A, 2, 33, 37, 53, 4, 11, 1.6),
+        Donor(Date(2000, 1, 1), 40, O, 34, 3401, 73, 77, 3, 17, 1.5),
+        Donor(Date(2001, 1, 1), 55, A, 2, 33, 37, 53, 4, 11, 1.6),
     ]
 
     fm = nothing   # mock; allocation ignores it
-    u  = 0.5
+    u = 0.5
 
     @testset "generate_arrivals" begin
         import KidneyAllocation.generate_arrivals
@@ -28,8 +28,8 @@
 
         recipient_registry = Dict{Int,Recipient}(i => recipient for (i, recipient) in enumerate(recipients))
 
-        idx = [1,3]
-        dates = [Date(2000,1,10), Date(2000,2,20)]
+        idx = [1, 3]
+        dates = [Date(2000, 1, 10), Date(2000, 2, 20)]
         rec = reconstruct_recipients(recipient_registry, idx, dates)
         @test length(rec) == length(idx)
 
@@ -48,9 +48,9 @@
     @testset "reconstruct_donors" begin
         import KidneyAllocation: get_HLA, reconstruct_donors
         idx = [1]
-        dates = [Date(2000,3,3)]
+        dates = [Date(2000, 3, 3)]
 
-        donor_registry = Dict{Int, Donor}(i => donor for (i, donor) in enumerate(donors))
+        donor_registry = Dict{Int,Donor}(i => donor for (i, donor) in enumerate(donors))
 
         don = reconstruct_donors(donor_registry, idx, dates)
         @test length(don) == length(idx)
@@ -64,7 +64,40 @@
         end
     end
 
-# TODO: test when DecisionModel is created
+    @testset "offers_to_dataframes" begin
+        focal_recipient = Recipient(
+            Date(1979, 1, 1), Date(1995, 1, 1), Date(2000, 1, 1),
+            O, 68, 203, 39, 77, 15, 17, 0,
+        )
+
+        donor_1 = Donor(
+            Date(2000, 1, 11), 40, O,
+            34, 3401, 73, 77, 3, 17, 1.5,
+        )
+        donor_2 = Donor(
+            Date(2000, 2, 1), 55, A,
+            2, 33, 37, 53, 4, 11, 1.6,
+        )
+
+        offers_by_simulation = [
+            [donor_1, donor_2],
+            Donor[],
+        ]
+
+        offers_df = KidneyAllocation.offers_to_dataframes(
+            focal_recipient,
+            offers_by_simulation,
+        )
+
+        @test nrow(offers_df) == 2
+        @test offers_df.simulation_id == [1, 1]
+        @test offers_df.offer_number == [1, 2]
+        @test offers_df.elapsed_days == [10, 31]
+        @test offers_df.kdri == [1.5, 1.6]
+
+    end
+
+    # TODO: test when DecisionModel is created
     # @testset "simulate_initial_state_indexed" begin
     #     rng2 = MersenneTwister(123)
 

@@ -1,27 +1,121 @@
 using Pkg
 Pkg.activate(".")
 
-using CSV, DataFrames, Dates, Gadfly, JLD2, Random 
+using CSV, DataFrames, Dates, Gadfly
 
 using KidneyAllocation
-
-import KidneyAllocation: reconstruct_recipients, build_recipient_registry, load_recipient, build_donor_registry
 
 recipient_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Candidates.csv"
 cpra_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/CandidatesCPRA.csv"
 donor_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Donors.csv"
 
-df_recipient = load_recipient(recipient_filepath)
+import KidneyAllocation: retrieve_observed_waiting_list, load_recipient, load_donor
 
-df2 = filter(row -> year(row.CAN_LISTING_DT) < 2013, df)
-cand_before_2013 = unique(df2.CAN_ID)
+## Candidates on the waitint list
 
-df2 = filter(row -> year(row.CAN_LISTING_DT) < 2020, df)
-cand_before_2020 = unique(df2.CAN_ID)
+t = Date(2012,1,1):Month(1):Date(2024,1,1)
+n = Vector{Int64}(undef, length(t))
 
-new_recipients = setdiff(cand_before_2020, cand_before_2013)
+for (i,tᵢ) in enumerate(t)
+    ids = retrieve_observed_waiting_list(recipient_filepath, tᵢ)
+    n[i] = length(ids)
+end
 
-λᵣ = length(new_recipients)/6
+df = DataFrame(Date = t, Candidates = n)
+
+plot(df, x=:Date, y=:Candidates)
+
+
+## Monthly donor arrivals
+
+df_donors = load_donor(donor_filepath)
+
+df_donor_arrival = DataFrame(DON_ID = Int64[], DON_DEATH_TM = DateTime[])
+
+for g in groupby(df_donors, :DON_ID)
+    push!(df_donor_arrival, [first(g.DON_ID), first(g.DON_DEATH_TM)])
+end
+# groupby(df_donors, :DON_DEATH_TM => yearmonth)
+
+df_donor_arrival.year = year.(df_donor_arrival.DON_DEATH_TM)
+df_donor_arrival.month = month.(df_donor_arrival.DON_DEATH_TM)
+
+df = combine(groupby(df_donor_arrival, [:year, :month]), :DON_DEATH_TM => length => :Donors)
+
+d = [Date(r.year, r.month, 1) for r in eachrow(df) ]
+df.Date = d
+
+plot(df, x=:Date, y=:Donors)
+
+
+## Monthly candidate arrivals
+
+df_recipients = load_recipient(recipient_filepath)
+
+df_recipient_arrival = DataFrame(CAN_ID = Int64[], CAN_LISTING_DT = DateTime[])
+
+for g in groupby(df_recipients, :CAN_ID)
+    push!(df_recipient_arrival, [first(g.CAN_ID), first(g.CAN_LISTING_DT)])
+end
+
+df_recipient_arrival.year = year.(df_recipient_arrival.CAN_LISTING_DT)
+df_recipient_arrival.month = month.(df_recipient_arrival.CAN_LISTING_DT)
+
+df = combine(groupby(df_recipient_arrival, [:year, :month]), :CAN_LISTING_DT => length => :Candidates)
+
+d = [Date(r.year, r.month, 1) for r in eachrow(df) ]
+df.Date = d
+
+plot(df, x=:Date, y=:Candidates)
+
+
+
+## Retrieve recipients for prediction
+
+df = filter(row -> row.OUTCOME == "TX" && row.CAN_LISTING_DT ≥ Date(2016,1,1), df_recipients)
+
+ids = Int64[]
+
+for r in eachrow(df)
+    if r.CAN_LISTING_DT ≥ Date(2016,1,1)
+    end
+end
+
+
+count(df.UPDATE_TM .< df.CAN_DIAL_DT)
+
+
+
+filter(row->row.CAN_ID == 214, df_donors)
+
+## Retrieve transplanted recipients for which waiting time has to be estimated
+
+# CPRA < 80
+# Registered between 2015 and 2020
+# Transplanted before 2020
+# Only for their first registration if past transplant
+
+recipient_ids = Int64[]
+
+for id in keys(recipient_registry)
+    r = recipient_registry[id]
+    date = first(last_status[id])
+    status = uppercase(strip(last(last_status[id])))
+
+    if r.arrival ≥ Date(2015,1,1) && r.arrival < Date(2020,1,1)
+        if r.cpra ≤ 80
+            if status == "TX" && date < Date(2020,1,1)
+                push!(recipient_ids, id)
+            end
+        end
+    end  
+end
+
+
+
+
+
+
 
 
 

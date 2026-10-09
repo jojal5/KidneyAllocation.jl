@@ -222,3 +222,107 @@ function simulate_initial_state_indexed(
 
     return final_recipient_indices, shifted_arrival_dates
 end
+
+
+"""
+    simulate_recipient_offers(...)
+
+Run `nsim` kidney-allocation simulations over `nyears` years and return, for
+each simulation, the donors whose offers reach `recipient`.
+
+The focal recipient is evaluated against the observed waiting list at their
+arrival date plus simulated recipient arrivals, and is assumed to refuse every
+offer.
+"""
+function simulate_recipient_offers(recipient::Recipient,
+    recipient_filepath::AbstractString,
+    recipient_registry::Dict{Int, Recipient},
+    donor_filepath::AbstractString,
+    donor_registry::Dict{Int, Donor},
+    dm::AbstractDecisionModel,
+    nyears::Real,
+    nsim::Int;
+    recipient_arrival_rate::Real,
+    donor_arrival_rate::Real,
+    mode::Symbol=:random,
+    rng::AbstractRNG=Random.default_rng(),
+    )
+
+    # Get the initial list
+    initial_recipient_ids = KidneyAllocation.retrieve_observed_waiting_list(recipient_filepath, recipient.arrival - Day(1))
+
+    initial_recipients = Recipient[]
+
+    for id in initial_recipient_ids
+        if id in keys(recipient_registry)
+            push!(initial_recipients, recipient_registry[id])
+        end
+    end
+
+    
+    offers = Vector{Vector{Donor}}(undef, nsim)
+
+    for i in 1:nsim
+
+        new_recipients = KidneyAllocation.generate_arrivals(recipient_registry, recipient_arrival_rate; origin=recipient.arrival, nyears=nyears, rng=rng)
+
+        waiting_recipients = vcat(initial_recipients, new_recipients)
+
+
+        ## Generate donor arrivals for the next nyears
+
+        kidney_by_id = KidneyAllocation.kidneys_given_by_donor(KidneyAllocation.load_donor(donor_filepath))
+
+        donors = KidneyAllocation.generate_arrivals(donor_registry, kidney_by_id, donor_arrival_rate, origin = recipient.arrival,nyears=nyears, rng=rng)
+
+
+        ## Retrieve all the donors offered to recipient
+
+        offered_donors = KidneyAllocation.get_recipient_offers(recipient, donors, waiting_recipients, dm)
+
+        offers[i] = unique(offered_donors) 
+
+    end
+
+    return offers
+
+end
+
+"""
+    offers_to_dataframes(focal_recipient, offers_by_simulation) ->
+        Tuple{DataFrame,DataFrame}
+
+Convert simulated offers for `focal_recipient` into a long-format offer table
+and a simulation-summary table.
+
+The offer table has one row per offer. The summary table has one row per
+simulation, including simulations with no offers.
+"""
+function offers_to_dataframes(
+    focal_recipient::Recipient,
+    offers_by_simulation::Vector{Vector{Donor}},
+)
+    offers_df = DataFrame(
+        simulation_id=Int[],
+        offer_number=Int[],
+        donor_arrival=Date[],
+        elapsed_days=Int[],
+        kdri=Float64[],
+    )
+
+    for (simulation_id, offered_donors) in enumerate(offers_by_simulation)
+        for (offer_number, donor) in enumerate(offered_donors)
+            donor_date = Date(donor.arrival)
+
+            push!(offers_df, (
+                simulation_id=simulation_id,
+                offer_number=offer_number,
+                donor_arrival=donor_date,
+                elapsed_days=Dates.value(donor_date - focal_recipient.arrival),
+                kdri=KidneyAllocation.get_kdri(donor), # or donor.kdri, depending on your API
+            ))
+        end
+    end
+
+    return offers_df
+end

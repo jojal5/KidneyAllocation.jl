@@ -1,35 +1,11 @@
 using Pkg
 Pkg.activate(".")
 
-using CSV, DataFrames, Dates, Random, Test
+using CSV, DataFrames, Dates, Random, Statistics, Test
+
+using Gadfly
 
 using KidneyAllocation
-
-import KidneyAllocation.filter_offers_until_last_acceptance
-
-        # Single row transplanted
-        df = DataFrame(DON_ID=1, STATUS="TX", DON_CAN_SCORE=30)
-        df_offered = filter_offers_until_last_acceptance(df)
-        @test df_offered.DON_CAN_SCORE == [30]
-
-df = DataFrame(DON_ID=[1, 1], STATUS=["TX", missing], DON_CAN_SCORE=[29, 30])
-        df_offered = filter_offers_until_last_acceptance(df)
-        @test df_offered.DON_CAN_SCORE == [30, 29]
-
-        df = DataFrame(DON_ID=[1, 1], STATUS=[missing, missing], DON_CAN_SCORE=[30, 29])
-        df_offered = filter_offers_until_last_acceptance(df)
-        @test isempty(df_offered)
-
-
-df = DataFrame(DON_ID=1, STATUS=[missing, "TX", missing, "TX", missing], DON_CAN_SCORE=[30, 29, 28, 27, 26])
-        df_offered = filter_offers_until_last_acceptance(df)
-        @test df_offered.DON_CAN_SCORE == [30, 29, 28, 27]
-
-# Three offers are wrongly marked as TX.
-        df = DataFrame(DON_ID=1, STATUS=[missing, "TX", missing, "TX", "TX"], DON_CAN_SCORE=[30, 29, 28, 27, 26])
-        df_offered = filter_offers_until_last_acceptance(df)
-        @test df_offered.DON_CAN_SCORE == [30, 29, 28, 27, 26]
-
 
 
 recipient_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Candidates.csv"
@@ -37,180 +13,335 @@ cpra_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-resea
 donor_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Donors.csv"
 
 
+res = CSV.read("/Users/jalbert/Dropbox/Files/Supervision/encours/AnastasiyaOlekBasanets/Simulations/11634.csv", DataFrame)
 
-
-
+nsim = 1000
+nyears = 10
 
 """
-    filter_offers_until_last_acceptance(df_donors::AbstractDataFrame) -> DataFrame
+    km_quantile(times, events, p) -> Union{Float64,Nothing}
 
-For each donor, retain offers up to and including the last recipient with
-status `"TX"` after sorting recipients by decreasing score.
+Estimate the `p`-th quantile of an event time from right-censored observations
+using the Kaplan–Meier estimator.
+
+Return `nothing` if the estimated event probability does not reach `p`.
 """
-function filter_offers_until_last_acceptance(df_donors::AbstractDataFrame)::DataFrame
-    filtered_df = similar(df_donors, 0)
+function km_quantile(
+    times::AbstractVector{<:Real},
+    events::AbstractVector{Bool},
+    p::Real,
+)::Union{Float64,Nothing}
 
-    for donor_df in groupby(df_donors, :DON_ID)
-        ranked_df = sort(donor_df, :DON_CAN_SCORE, rev=true)
+    length(times) == length(events) ||
+        throw(ArgumentError("`times` and `events` must have the same length"))
+    0 < p < 1 ||
+        throw(ArgumentError("`p` must lie strictly between 0 and 1"))
+    all(t -> t ≥ 0, times) ||
+        throw(ArgumentError("`times` must be non-negative"))
 
-        last_acceptance = findlast(isequal("TX"), ranked_df.STATUS)
+    event_times = sort(unique([
+        times[i] for i in eachindex(times) if events[i]
+    ]))
 
-        if !isnothing(last_acceptance)
-            append!(filtered_df, first(ranked_df, last_acceptance))
+    survival = 1.0
+    target_survival = 1 - p
+
+    for time in event_times
+        n_at_risk = count(t -> t ≥ time, times)
+        n_events = count(
+            i -> events[i] && times[i] == time,
+            eachindex(times),
+        )
+
+        survival *= 1 - n_events / n_at_risk
+
+        survival ≤ target_survival && return Float64(time)
+    end
+
+    return nothing
+end
+
+import KidneyAllocation.check_df_columns
+
+"""
+    first_qualifying_offer_quantile(df, p; max_kdri, n_simulations,
+                                    censoring_time) -> Union{Float64,Nothing}
+
+Estimate the `p`th quantile of time to the first offer with KDRI at most
+`max_kdri`. Simulations without such an offer are right-censored at
+`censoring_time`.
+"""
+function first_qualifying_offer_quantile(
+    df::AbstractDataFrame,
+    p::Real;
+    max_kdri::Real=Inf,
+    n_simulations::Integer=1000,
+    censoring_time::Real=Inf,
+)::Union{Float64,Nothing}
+
+    check_df_columns(df, :simulation_id, :elapsed_days, :kdri)
+
+    n_simulations > 0 ||
+        throw(ArgumentError("`n_simulations` must be positive"))
+    censoring_time ≥ 0 ||
+        throw(ArgumentError("`censoring_time` must be non-negative"))
+    0 < p < 1 ||
+        throw(ArgumentError("`p` must lie strictly between 0 and 1"))
+    all(id -> id isa Integer && 1 ≤ id ≤ n_simulations, df.simulation_id) ||
+        throw(ArgumentError("`:simulation_id` must lie in 1:$n_simulations"))
+    all(t -> 0 ≤ t ≤ censoring_time, df.elapsed_days) ||
+        throw(ArgumentError("`:elapsed_days` must lie in [0, censoring_time]"))
+
+    times = fill(Float64(censoring_time), n_simulations)
+    events = falses(n_simulations)
+
+    qualifying_df = filter(row -> row.kdri ≤ max_kdri, df)
+
+    for simulation_df in groupby(qualifying_df, :simulation_id)
+        simulation_id = first(simulation_df.simulation_id)
+
+        times[simulation_id] = minimum(simulation_df.elapsed_days)
+        events[simulation_id] = true
+    end
+
+    return km_quantile(times, events, p)
+end
+
+
+
+
+function time_to_first_offer(df::AbstractDataFrame, p::Real; max_kdri::Real=Inf, n_simulations::Integer=1000)
+    check_df_columns(df, :simulation_id, :elapsed_days, :kdri)
+
+    all(id -> id isa Integer && 1 ≤ id ≤ n_simulations, df.simulation_id) ||
+        throw(ArgumentError("`:simulation_id` must lie in 1:$n_simulations"))
+
+    0 < p < 1 ||
+        throw(ArgumentError("`p` must lie strictly between 0 and 1"))
+
+    filtered_df = filter(row->row.kdri < max_kdri, df)
+
+    if isempty(filtered_df)
+        return Inf
+    else
+
+        df_min_time = combine(groupby(filtered_df, :simulation_id), :elapsed_days => minimum => :elapsed_days)
+
+        t = fill(Inf, n_simulations)
+
+        for g in groupby(df_min_time, :simulation_id)
+            t[first(g.simulation_id)] = first(g.elapsed_days)
         end
+
+        return quantile(t, p)
 
     end
 
-    return filtered_df
 end
 
-df = filter_offers_until_last_acceptance(df_donors)
+time_to_first_offer(res, 0.5, max_kdri = .8)
+first_qualifying_offer_quantile(res, 0.25)
 
+"""
+    probability_qualifying_offer_by(df, t; max_kdri, n_simulations, censoring_time) -> Float64
 
+Return the simulated probability of receiving an offer with KDRI at most
+`max_kdri` by time `t`.
+"""
+function probability_qualifying_offer_by(
+    df::AbstractDataFrame,
+    t::Integer;
+    max_kdri::Real=Inf,
+    n_simulations::Integer=1000,
+)::Float64
 
+    check_df_columns(df, :simulation_id, :elapsed_days, :kdri)
 
+    n_simulations > 0 ||
+        throw(ArgumentError("`n_simulations` must be positive"))
 
+    all(id -> id isa Integer && 1 ≤ id ≤ n_simulations, df.simulation_id) ||
+        throw(ArgumentError("`:simulation_id` must lie in 1:$n_simulations"))
 
 
+    has_qualifying_offer = falses(n_simulations)
 
+    for simulation_df in groupby(df, :simulation_id)
+        simulation_id = first(simulation_df.simulation_id)
 
+        has_qualifying_offer[simulation_id] = any(
+            row -> row.elapsed_days ≤ t && row.kdri ≤ max_kdri,
+            eachrow(simulation_df),
+        )
+    end
 
-g = groupby(df_donors,:DON_ID)[2]
-sorted_df = sort(g, :DON_CAN_SCORE)
-ind = findlast(isequal("TX"), sorted_df.STATUS)
-first(sorted_df, ind)
+    return mean(has_qualifying_offer)
+end
 
+@time probability_qualifying_offer_by(res, 50; max_kdri = .85, n_simulations=1000)
 
-sdf = filter(row -> row.DON_ID == 1117, df_donors)
+"""
+    first_qualifying_offer_quantile_given_offer(df, p; max_kdri=Inf)
 
-sort!(sdf, :DON_CAN_SCORE, rev=true)
-ind = findlast(isequal("TX"), sdf.STATUS)
+Return the `p`th quantile of time to first qualifying offer, conditional on
+receiving at least one qualifying offer during the simulation.
+"""
+function first_qualifying_offer_quantile_given_offer(
+    df::AbstractDataFrame,
+    p::Real;
+    max_kdri::Real=Inf,
+)::Union{Float64,Nothing}
+    check_df_columns(df, :simulation_id, :elapsed_days, :kdri)
 
-append!(df, sdf[1:ind, :])
+    0 < p < 1 ||
+        throw(ArgumentError("`p` must lie strictly between 0 and 1"))
 
-count(sdf.STA)
+    qualifying_df = filter(row -> row.kdri ≤ max_kdri, df)
+    isempty(qualifying_df) && return nothing
 
+    first_times = combine(
+        groupby(qualifying_df, :simulation_id),
+        :elapsed_days => minimum => :elapsed_days,
+    )
 
+    return quantile(first_times.elapsed_days, p)
+end
 
 
 
-unique(df_donors.STATUS)
+id = 3748
+# id = 10615
 
+df_recipients = KidneyAllocation.load_recipient(recipient_filepath)
+df_donors = KidneyAllocation.load_donor(donor_filepath)
 
+df_recipient = filter(row -> row.CAN_ID == id, df_recipients)
+obs_waiting_time_before_transplantation = Dates.days(KidneyAllocation.get_last_update(df_recipient)[1] - first(df_recipient.CAN_LISTING_DT))
 
+df_donor = filter(row -> row.CAN_ID == id, df_donors)
+obs_waiting_time_before_first_offer = Dates.days(minimum(df_donor.DON_DEATH_TM) - first(df_recipient.CAN_LISTING_DT))
 
+sim_folder = "/Users/jalbert/Dropbox/Files/Supervision/encours/AnastasiyaOlekBasanets/Simulations/"
+filepath = joinpath(sim_folder, "$id.csv")
 
-println("fin")
+res = CSV.read(filepath, DataFrame)
 
+time_to_first_offer(res, .25)
 
+df = combine(groupby(res, :simulation_id), :elapsed_days => minimum => :elapsed_days)
 
+plot(df, y=:elapsed_days, Geom.boxplot)
 
 
 
-# recipient_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Candidates.csv"
 
-# df = CSV.read(recipient_filepath, DataFrame, missingstring=["NULL",""])
+paths = readdir(sim_folder; join = true)
+files = filter(isfile, paths)
 
-# filter!(row->row.CAN_ID in [1, 3, 4, 5, 21752, 21900], df)
-# select!(df, [:CAN_ID, :CAN_LISTING_DT, :CAN_DIAL_DT,:OUTCOME, :UPDATE_TM])
-# CSV.write("unfiltered_outcomes.csv", df)
+q1 = falses(length(files))
+q2 = falses(length(files))
+q3 = falses(length(files))
 
+n_empty = 0
 
-# recipient_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Candidates.csv"
+for (i, file) in enumerate(files)
 
-# df = CSV.read(recipient_filepath, DataFrame, missingstring=["NULL",""])
+    println(i)
+    id = parse(Int64, first.(splitext.(basename.(file))))
 
-# filter!(row->row.CAN_ID in [1, 3, 4, 5, 21752, 21900], df)
-# select!(df, [:CAN_ID, :CAN_LISTING_DT, :CAN_DIAL_DT,:OUTCOME, :UPDATE_TM])
+    df_recipient = filter(row -> row.CAN_ID == id, df_recipients)
+    df_donor = filter(row -> row.CAN_ID == id, df_donors)
 
-# filtered_df = combine(groupby(df, :CAN_ID)) do recipient_df
-#     KidneyAllocation.filter_outcomes(recipient_df)
-# end
+    if isempty(df_recipient) || isempty(df_donor)
+        n_empty +=1
+        continue
+    end
 
-# CSV.write("filtered_outcomes.csv", filtered_df)
+    obs_waiting_time_before_first_offer = Dates.days(minimum(df_donor.DON_DEATH_TM) - first(df_recipient.CAN_LISTING_DT))
 
+    res = CSV.read(file, DataFrame)
 
+    t1 = first_qualifying_offer_quantile_given_offer(res, .25)
+    t2 = first_qualifying_offer_quantile_given_offer(res, .5)
+    t3 = first_qualifying_offer_quantile_given_offer(res, .75)
 
+    q1[i] = !isnothing(t1) && obs_waiting_time_before_first_offer ≤ t1
+    q2[i] = !isnothing(t2) && obs_waiting_time_before_first_offer ≤ t2
+    q3[i] = !isnothing(t3) && obs_waiting_time_before_first_offer ≤ t3
 
-# df = CSV.read("test/data/filtered_outcomes.csv", DataFrame)
+end
 
-# g = groupby(df, :CAN_ID)
 
-# df_recipient = sort(g[1], :UPDATE_TM)
+n_empty
 
+p₁ = count(q1)/(length(q1) - n_empty)
+p₂ = count(q2)/(length(q2) - n_empty)
+p₃ = count(q3)/(length(q3) - n_empty)
 
 
 
-# """
-#     get_offers(recipient, donors, recipients, is_unallocated; ...)
 
-# Retrieve the offers from `donors` that the `reciepient` would has been offered considering the `recipients` on the waiting list. 
-# """
-# function get_offers(recipient::Recipient,
-#     donors::Vector{Donor}, 
-#     recipients::Vector{Recipient},
-#     is_unallocated::AbstractVector{<:Bool}=trues(length(recipients));
-#     mode::Symbol=:random,
-#     rng::AbstractRNG=Random.default_rng(),
-# )
+mean(q1)
 
-#     offers = Vector{Donor}[]
 
-#     for donor in donors
 
-#         recipient_eligibility = is_abo_compatible(donor, recipient) && is_active(recipient, donor.arrival) && sim_cpra_compatibility(recipient)
-#         recipient_score = score(donor, recipient)
-    
-#         ind = get_eligible_recipient_indices(donor, recipients, is_unallocated)
 
-#         ranked_indices = rank_eligible_recipient_indices(donor, recipients, is_unallocated)
+import KidneyAllocation: retrieve_observed_waiting_list
 
-#         ind =  allocate_one_donor(donor, recipients, dm, ranked_indices; mode=mode, rng=rng)
+t = Date(2012,1,1):Month(1):Date(2020,1,1)
+n = Vector{Int64}(undef, length(t))
 
-#         s = KidneyAllocation.score.(donor, recipients[ind])
+for (i,tᵢ) in enumerate(t)
+    ids = retrieve_observed_waiting_list(recipient_filepath, tᵢ)
+    n[i] = length(ids)
+end
 
-#         p = sortperm(scores; rev=true)
-#         s = s[p]
-#         ind = ind[p]
+df = DataFrame(Date = t, Candidates = n)
 
-#         decision = decide.(dm, recipients[ind], donor; mode=mode, rng=rng)
+plot(df, x=:Date, y=:Candidates)
 
-#         accpos = findfirst(decision)
 
-#         # If no recipient have accepted the offer, then the considered recipients would also been offered
-#         if !isempty(accpos)
-#             is_unallocated[ind[accpos]] = false
-#         else
-#             push!(offers, donor)
-#         end
 
-#         # If the considered recipient is eligible, and the first recipient that have accepted the offer has a score lower then the considered recipient, then the considered recipient would has been offerred.
-#         if recipient_eligibility && recipient_score > s[ind[indacc]]
-#             push!(offers, donor)
-#         end
 
-#     end
+df_donors
 
-# end
 
+df_donor_arrival = DataFrame(DON_ID = Int64[], DON_DEATH_TM = DateTime[])
 
+for g in groupby(df_donors, :DON_ID)
+    push!(df_donor_arrival, [first(g.DON_ID), first(g.DON_DEATH_TM)])
+end
+# groupby(df_donors, :DON_DEATH_TM => yearmonth)
 
+df_donor_arrival.year = year.(df_donor_arrival.DON_DEATH_TM)
+df_donor_arrival.month = month.(df_donor_arrival.DON_DEATH_TM)
 
+df = combine(groupby(df_donor_arrival, [:year, :month]), :DON_DEATH_TM => length => :Donors)
 
+d = [Date(r.year, r.month, 1) for r in eachrow(df) ]
+df.Date = d
 
+plot(df, x=:Date, y=:Donors)
 
 
 
+df_recipients
 
+df_recipient_arrival = DataFrame(CAN_ID = Int64[], CAN_LISTING_DT = DateTime[])
 
+for g in groupby(df_recipients, :CAN_ID)
+    push!(df_recipient_arrival, [first(g.CAN_ID), first(g.CAN_LISTING_DT)])
+end
 
+df_recipient_arrival.year = year.(df_recipient_arrival.CAN_LISTING_DT)
+df_recipient_arrival.month = month.(df_recipient_arrival.CAN_LISTING_DT)
 
+df = combine(groupby(df_recipient_arrival, [:year, :month]), :CAN_LISTING_DT => length => :Candidates)
 
+d = [Date(r.year, r.month, 1) for r in eachrow(df) ]
+df.Date = d
 
-
-
-
-
+plot(df, x=:Date, y=:Candidates)
 
 
 
