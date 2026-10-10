@@ -111,6 +111,7 @@ df.time_to_first_offer = time_to_first_offer
 #         df
 # end
 
+# Si time_to_first_offer == missing mais qu'on a time_to_transplant != missing, time_to_first_offer est fixé à time_to_transplant
 df[!, :time_to_first_offer] = coalesce.(df[!, :time_to_first_offer], df[!, :time_to_transplant])
 
 df
