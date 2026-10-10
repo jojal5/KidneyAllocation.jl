@@ -1,7 +1,7 @@
 using Pkg
 Pkg.activate(".")
 
-using CSV, DataFrames, Dates, Gadfly
+using CSV, DataFrames, Dates, Gadfly, Statistics
 
 using KidneyAllocation
 
@@ -11,7 +11,7 @@ donor_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-rese
 
 import KidneyAllocation: retrieve_observed_waiting_list, load_recipient, load_donor
 
-## Candidates on the waitint list
+## Candidates on the waiting list
 
 t = Date(2012,1,1):Month(1):Date(2024,1,1)
 n = Vector{Int64}(undef, length(t))
@@ -70,23 +70,56 @@ plot(df, x=:Date, y=:Candidates)
 
 
 
-## Retrieve recipients for prediction
+## Retrieve transplanted recipients for prediction
 
-df = filter(row -> row.OUTCOME == "TX" && row.CAN_LISTING_DT ≥ Date(2016,1,1), df_recipients)
+df = filter(row -> row.OUTCOME == "TX" &&
+    row.CAN_LISTING_DT ≥ Date(2016,1,1) &&
+    row.UPDATE_TM < Date(2020,1,1),
+    df_recipients)
 
-ids = Int64[]
 
-for r in eachrow(df)
-    if r.CAN_LISTING_DT ≥ Date(2016,1,1)
+tx_ids = df.CAN_ID
+
+df.time_to_transplant = Dates.days.(df.UPDATE_TM - df.CAN_LISTING_DT)
+
+time_to_first_offer = Vector{Union{Int64, Missing}}(undef, nrow(df))
+
+for (i,r) in enumerate(eachrow(df))
+    
+    println(i)
+    
+    # extract the first offer after listing_date
+
+    df_offers = filter(row-> row.CAN_ID == r.CAN_ID &&
+    row.DON_DEATH_TM ≥ r.CAN_LISTING_DT &&
+    row.DON_DEATH_TM ≤ r.UPDATE_TM, df_donors)
+
+    if !isempty(df_offers)
+        time_to_first_offer[i] = Dates.days(minimum(df_offers.DON_DEATH_TM) - r.CAN_LISTING_DT)
     end
+
 end
 
+count(ismissing.(time_to_first_offer))
+# Pour 40 patients transplantés, on ne retrouve pas les offres dans le fichier donors.
 
-count(df.UPDATE_TM .< df.CAN_DIAL_DT)
+df.time_to_first_offer = time_to_first_offer
+
+# On remplace le temps avant la première offre avec le UPDATE_TM du fichier des receveurs.
+# for (i,r) in eachrow(df)
+#     if ismissing(r.time_to_first_offer)
+#         df
+# end
+
+df[!, :time_to_first_offer] = coalesce.(df[!, :time_to_first_offer], df[!, :time_to_transplant])
+
+df
+
+combine(groupby(df, :CAN_BLOOD), :time_to_first_offer => mean => :mean_waiting_time)
 
 
 
-filter(row->row.CAN_ID == 214, df_donors)
+
 
 ## Retrieve transplanted recipients for which waiting time has to be estimated
 

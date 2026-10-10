@@ -218,6 +218,82 @@ function filter_outcomes(df::AbstractDataFrame)::DataFrame
     return filtered_df
 end
 
+
+"""
+    first_exit_after_dialysis(df) -> Union{DateTime,Nothing}
+
+Return the first exit time on or after the recorded dialysis time for a
+single recipient, or `nothing` if no such exit exists.
+"""
+function first_exit_after_dialysis(
+    df::AbstractDataFrame,
+)::Union{DateTime,Nothing}
+
+    check_df_columns(df, :CAN_ID, :CAN_DIAL_DT, :OUTCOME, :UPDATE_TM)
+    check_df_column_constant(df, :CAN_ID, :CAN_DIAL_DT)
+
+    isempty(df) && return nothing
+
+    dialysis_time = DateTime(first(df.CAN_DIAL_DT))
+    exit_outcomes = ("X", "TX VIVANT", "DCD", "TX")
+    exit_time = nothing
+
+    for row in eachrow(df)
+        update_time = DateTime(row.UPDATE_TM)
+        outcome = uppercase(strip(string(row.OUTCOME)))
+
+        update_time ≥ dialysis_time && outcome ∈ exit_outcomes || continue
+
+        exit_time = isnothing(exit_time) ? update_time : min(exit_time, update_time)
+    end
+
+    return exit_time
+end
+
+"""
+    filter_dialysis_episode(df) -> DataFrame
+
+Return records from the recorded dialysis time through the first exit status
+on or after dialysis, including the exit record. The listing date must lie
+within the retained episode; otherwise it is replaced by the dialysis date.
+"""
+function filter_dialysis_episode(df::AbstractDataFrame)::DataFrame
+    check_df_columns(df, :CAN_ID, :CAN_DIAL_DT, :CAN_LISTING_DT, :OUTCOME, :UPDATE_TM)
+    check_df_column_constant(df, :CAN_ID, :CAN_DIAL_DT, :CAN_LISTING_DT)
+
+    isempty(df) && return DataFrame(df)
+
+    dialysis_date = first(df.CAN_DIAL_DT)
+    listing_date = first(df.CAN_LISTING_DT)
+    dialysis_time = DateTime(dialysis_date)
+    exit_time = first_exit_after_dialysis(df)
+
+    episode_df = DataFrame(filter(df) do row
+        update_time = DateTime(row.UPDATE_TM)
+
+        update_time ≥ dialysis_time &&
+            (isnothing(exit_time) || update_time ≤ exit_time)
+    end)
+
+    isempty(episode_df) && return episode_df
+
+    episode_end = isnothing(exit_time) ?
+        maximum(DateTime.(episode_df.UPDATE_TM)) :
+        exit_time
+
+    listing_time = DateTime(listing_date)
+
+    if !(dialysis_time ≤ listing_time ≤ episode_end)
+        corrected_listing_date = convert(typeof(listing_date), dialysis_date)
+        episode_df.CAN_LISTING_DT .= corrected_listing_date
+    end
+
+    # Removing duplicated rows (happens for recipient 501, 827 and 2051)
+    return unique!(episode_df)
+end
+
+
+
 """
     recipient_active_waiting_proportion(df::AbstractDataFrame) -> Float64
 
@@ -480,12 +556,17 @@ function load_recipient(filepath::AbstractString)
     # Keeping only adult recipients
     filter!(row -> years_between(row.CAN_BTH_DT, row.CAN_LISTING_DT) > 17, df)
 
-    # # Keeping only the first outcome for each recipient. Some recipients are registered more than once and key information are lost for the additional registration
+    # Keeping only the first outcome for each recipient. Some recipients are registered more than once and key information are lost for the additional registration
     filtered_df = similar(df, 0)
     for g in groupby(df, :CAN_ID)
         append!(filtered_df, filter_outcomes(g))
     end
-    # filter_outcomes
+    
+    # Keeping only the first outcome after the registered dialysis date for each recipient. Some recipients are registered more than once and key information are lost for the additional registration
+    filtered_df = similar(df, 0)
+    for g in groupby(df, :CAN_ID)
+        append!(filtered_df, filter_dialysis_episode(g))
+    end
 
     # # If listing time is missing, replacing it by the dialysis time. If listing is before dialysis, set listing = dialysis
     # enforce_listing_after_dialysis!(df)
