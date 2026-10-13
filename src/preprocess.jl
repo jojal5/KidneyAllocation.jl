@@ -213,6 +213,21 @@ function first_exit_after_dialysis(df::AbstractDataFrame)::Union{DateTime,Nothin
 end
 
 """
+    get_exit_date(r::DataFrameRow) -> Union{DateTime,Nothing}
+
+Return the time of the exit from the waiting list for a single
+recipient, or `nothing` if no exit outcome is recorded.
+"""
+function get_exit_date(r::DataFrameRow)::Union{DateTime,Nothing}
+    exit_outcomes = ("TX", "TX VIVANT", "X", "DCD")
+
+    date = r.UPDATE_TM
+    outcome = uppercase(strip(r.OUTCOME))
+
+    return outcome ∈ exit_outcomes ? date : nothing
+end
+
+"""
     get_expiration_date(df::AbstractDataFrame) -> Union{DateTime,Nothing}
 
 Return the time of the latest retained update if its outcome indicates a
@@ -609,6 +624,30 @@ function build_recipient_registry(df_recipients::AbstractDataFrame)
 
     return recipient_registry, time_to_first_offer_registry, time_to_transplant_registry
 end
+
+"""
+    retrieve_observed_waiting_list(recipient_filepath, date) -> Vector{Int64}
+
+Return the IDs of recipients registered on the waiting list at `date`, based
+on the recipient history stored in `recipient_filepath`.
+"""
+function retrieve_observed_waiting_list(df_recipients::AbstractDataFrame, date::DateTime)::Vector{Int64}
+
+    registered_ids = Int64[]
+
+    for r in eachrow(df_recipients)
+        arrival_time = DateTime(r.CAN_LISTING_DT)
+        exit_time = get_exit_date(r)
+
+        if arrival_time ≤ date && (isnothing(exit_time) || date ≤ exit_time)
+            push!(registered_ids, r.CAN_ID)
+        end
+    end
+
+    return registered_ids
+end
+
+retrieve_observed_waiting_list(df_recipients::AbstractDataFrame, date::Date) = retrieve_observed_waiting_list(df_recipients, DateTime(date))
 
 
 
@@ -1100,89 +1139,7 @@ end
 
 
 
-# """
-#     retrieve_observed_waiting_list(recipient_filepath, date) -> Vector{Int64}
 
-# Return the IDs of recipients registered on the waiting list at `date`, based
-# on the recipient history stored in `recipient_filepath`.
-# """
-# function retrieve_observed_waiting_list(recipient_filepath::String, date::DateTime)::Vector{Int64}
-
-#     df = load_recipient(recipient_filepath)
-#     registered_ids = Int64[]
-
-#     for group in groupby(df, :CAN_ID)
-#         filtered_group = filter_outcomes(group)
-
-#         arrival_time = DateTime(first(filtered_group.CAN_LISTING_DT))
-#         exit_time = get_exit_date(filtered_group)
-
-#         if arrival_time ≤ date &&
-#            (isnothing(exit_time) || date ≤ exit_time)
-#             push!(registered_ids, first(filtered_group.CAN_ID))
-#         end
-#     end
-
-#     return registered_ids
-# end
-
-# retrieve_observed_waiting_list(recipient_filepath::String, date::Date) = retrieve_observed_waiting_list(recipient_filepath, DateTime(date))
-
-# """
-#     count_recipient_arrivals(df, start_time, end_time) -> Int
-
-# Return the number of distinct recipients whose listing date lies in
-# `[start_time, end_time)`.
-# """
-# function count_recipient_arrivals(df::AbstractDataFrame, start_time::DateTime, end_time::DateTime)::Int
-
-#     check_df_columns(df, :CAN_ID, :CAN_LISTING_DT)
-
-#     start_time ≤ end_time || throw(ArgumentError("`start_time` must not be after `end_time`"))
-
-#     n_recipients = 0
-
-#     for recipient_df in groupby(df, :CAN_ID)
-#         listing_time = DateTime(first(recipient_df.CAN_LISTING_DT))
-
-#         if start_time ≤ listing_time < end_time
-#             n_recipients += 1
-#         end
-#     end
-
-#     return n_recipients
-# end
-
-
-# """
-#     count_donor_arrivals(df, start_time, end_time) -> Int
-
-# Return the number of distinct donors whose death time lies in
-# `[start_time, end_time)`.
-# """
-# function count_donor_arrivals(
-#     df::AbstractDataFrame,
-#     start_time::DateTime,
-#     end_time::DateTime,
-# )::Int
-
-#     check_df_columns(df, :DON_ID, :DON_DEATH_TM)
-
-#     start_time ≤ end_time ||
-#         throw(ArgumentError("`start_time` must not be after `end_time`"))
-
-#     n_donors = 0
-
-#     for donor_df in groupby(df, :DON_ID)
-#         donor_arrival_time = DateTime(first(donor_df.DON_DEATH_TM))
-
-#         if start_time ≤ donor_arrival_time < end_time
-#             n_donors += 1
-#         end
-#     end
-
-#     return n_donors
-# end
 
 
 

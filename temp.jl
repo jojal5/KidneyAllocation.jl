@@ -7,16 +7,93 @@ using Gadfly
 
 using KidneyAllocation
 
-
 recipient_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Candidates.csv"
 cpra_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/CandidatesCPRA.csv"
 donor_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Donors.csv"
 
-
 df_recipients, df_donors = KidneyAllocation.load_data(recipient_filepath, cpra_filepath, donor_filepath)
 
-df_recipients
-df_donors
+
+
+println("fin")
+
+
+
+# """
+#     count_recipient_arrivals(df, start_time, end_time) -> Int
+
+# Return the number of distinct recipients whose listing date lies in
+# `[start_time, end_time)`.
+# """
+# function count_recipient_arrivals(df::AbstractDataFrame, start_time::DateTime, end_time::DateTime)::Int
+
+#     check_df_columns(df, :CAN_ID, :CAN_LISTING_DT)
+
+#     start_time ≤ end_time || throw(ArgumentError("`start_time` must not be after `end_time`"))
+
+#     n_recipients = 0
+
+#     for recipient_df in groupby(df, :CAN_ID)
+#         listing_time = DateTime(first(recipient_df.CAN_LISTING_DT))
+
+#         if start_time ≤ listing_time < end_time
+#             n_recipients += 1
+#         end
+#     end
+
+#     return n_recipients
+# end
+
+
+# """
+#     count_donor_arrivals(df, start_time, end_time) -> Int
+
+# Return the number of distinct donors whose death time lies in
+# `[start_time, end_time)`.
+# """
+# function count_donor_arrivals(
+#     df::AbstractDataFrame,
+#     start_time::DateTime,
+#     end_time::DateTime,
+# )::Int
+
+#     check_df_columns(df, :DON_ID, :DON_DEATH_TM)
+
+#     start_time ≤ end_time ||
+#         throw(ArgumentError("`start_time` must not be after `end_time`"))
+
+#     n_donors = 0
+
+#     for donor_df in groupby(df, :DON_ID)
+#         donor_arrival_time = DateTime(first(donor_df.DON_DEATH_TM))
+
+#         if start_time ≤ donor_arrival_time < end_time
+#             n_donors += 1
+#         end
+#     end
+
+#     return n_donors
+# end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 donor_registry, given_kidneys = KidneyAllocation.build_donor_registry(df_donors) 
 recipient_registry, time_to_first_offer_registry, time_to_transplant_registry = KidneyAllocation.build_recipient_registry(df_recipients)

@@ -122,6 +122,15 @@
 
     end
 
+    @testset "get_exit_date()" begin
+        import KidneyAllocation.get_exit_date
+        @test get_exit_date(df[1, :]) == DateTime(2012,4,24,14,33,41) # TX
+        @test get_exit_date(df[2, :]) === nothing # 1
+        @test get_exit_date(df[4, :]) === nothing #0
+        @test get_exit_date(df[8, :]) == DateTime(2012,12,3,15,49,00) # TX VIVANT
+        @test get_exit_date(df[29, :]) == DateTime(2013,12,4,11,26,25) # X
+    end
+
     @testset "get_expiration_date()" begin
         import KidneyAllocation.get_expiration_date
 
