@@ -190,6 +190,37 @@
 
     end
 
+    df = CSV.read("data/offers.csv", DataFrame)
+    G = groupby(df, :DON_ID)
+
+    @testset "filter_offers_until_last_acceptance()" begin
+        import KidneyAllocation.filter_offers_until_last_acceptance
+
+        filtered_df = filter_offers_until_last_acceptance(G[1])
+        @test nrow(filtered_df) == 13
+        @test uppercase(strip(last(filtered_df.DECISION))) == "ACCEPTATION"
+
+        filtered_df = filter_offers_until_last_acceptance(G[2])
+        @test nrow(filtered_df) == 42
+
+        filtered_df = filter_offers_until_last_acceptance(G[3])
+        @test nrow(filtered_df) == 3
+        @test uppercase(strip(last(filtered_df.DECISION))) == "ACCEPTATION"
+
+        filtered_df = filter_offers_until_last_acceptance(G[4])
+        @test nrow(filtered_df) == 1
+        @test uppercase(strip(last(filtered_df.DECISION))) == "ACCEPTATION"
+
+    end
+
+    @testset "infer_number_of_kidneys_offered()" begin
+        import KidneyAllocation.infer_number_of_kidneys_offered
+        @test infer_number_of_kidneys_offered(G[1]) == 2
+        @test infer_number_of_kidneys_offered(G[2]) == 2 # No kidney has been accepted but we suppos that 2 were offered
+        @test infer_number_of_kidneys_offered(G[3]) == 2 # 3 recipients have accepted, but only 2 kidneys were transplanted
+        @test infer_number_of_kidneys_offered(G[4]) == 1 # Only one kidney offered and it is accepted
+    end
+
 
 
     

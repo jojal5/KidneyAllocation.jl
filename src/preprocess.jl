@@ -346,26 +346,51 @@ end
 # Function for Donors
 
 """
-    filter_offers_until_last_acceptance(df_donors::AbstractDataFrame) -> DataFrame
+    filter_offers_until_last_acceptance(df_donor::AbstractDataFrame) -> DataFrame
 
-For each donor, retain offers up to and including the last recipient with
-status `"TX"` after sorting recipients by decreasing score.
+For one donor, sort offers by decreasing `DON_CAN_SCORE` and retain rows
+through the last `"ACCEPTATION"` decision, inclusive. If no offer is accepted,
+retain all rows.
 """
-function filter_offers_until_last_acceptance(df_donors::AbstractDataFrame)::DataFrame
-    filtered_df = similar(df_donors, 0)
+function filter_offers_until_last_acceptance(df_donor::AbstractDataFrame)::DataFrame
+    check_df_columns(df_donor, :DON_ID, :DON_CAN_SCORE, :DECISION)
 
-    for donor_df in groupby(df_donors, :DON_ID)
-        ranked_df = sort(donor_df, :DON_CAN_SCORE, rev=true)
+    isempty(df_donor) && return DataFrame(df_donor)
 
-        last_acceptance = findlast(isequal("TX"), ranked_df.STATUS)
+    check_df_column_constant(df_donor, :DON_ID)
 
-        if !isnothing(last_acceptance)
-            append!(filtered_df, first(ranked_df, last_acceptance))
-        end
+    ranked_df = sort(df_donor, :DON_CAN_SCORE, rev=true)
 
+    last_acceptance = findlast(isequal("ACCEPTATION"), uppercase.(strip.(ranked_df.DECISION)))
+
+    if isnothing(last_acceptance)
+        return ranked_df
+    else
+        return first(ranked_df, last_acceptance)
     end
+end
 
-    return filtered_df
+"""
+    infer_number_of_kidneys_offered(df_donor::AbstractDataFrame) -> Int
+
+Infer the number of kidneys offered from a single donor history. Return the
+number of recorded `"TX"` status, or `2` if no transplantation is recorded.
+In the latter, it is assumed that it was two kidneys that were refused by the recipients.
+"""
+function infer_number_of_kidneys_offered(df_donor::AbstractDataFrame)::Int
+
+    check_df_column_constant(df_donor, :DON_ID)
+    
+    :STATUS ∈ propertynames(df_donor) ||
+        throw(ArgumentError("Missing column :STATUS"))
+
+    status = uppercase.(strip.(skipmissing(df_donor.STATUS)))
+
+    n_transplanted = count(status .== "TX")
+
+    n_offered = n_transplanted > 0 ? n_transplanted : 2
+
+    return n_offered
 end
 
 """
@@ -389,24 +414,27 @@ function load_donor(filepath::String)
     # Only attribution type 5
     filter!(row -> row.ATT_TYPE == 5, df_donors)
 
-    df = filter_offers_until_last_acceptance(df_donors)
-
-    fill_hla_pairs!(df, "DON")
+    fill_hla_pairs!(df_donors, "DON")
 
     col_to_harmonize = [:DON_AGE, :DON_BLOOD, :DON_DEATH_TM, :WEIGHT, :HEIGHT, :ETHNICITY, :HYPERTENSION, :DIABETES, :DEATH, :CREATININE, :HCV, :DCD]
 
     for col in col_to_harmonize
-        harmonize_col!(df, col=col, idcol=:DON_ID)
+        harmonize_col!(df_donors, col=col, idcol=:DON_ID)
     end
 
     cols_to_drop = [:DON_LAB_DT_TM, :ATT_TYPE]
-    select!(df, Not(cols_to_drop))
+    select!(df_donors, Not(cols_to_drop))
 
-    allowmissing!(df, [:WEIGHT, :HEIGHT])
-    df.WEIGHT[df.WEIGHT .≈ 0.] .= missing
-    df.HEIGHT[df.HEIGHT .≈ 0.] .= missing
+    allowmissing!(df_donors, [:WEIGHT, :HEIGHT])
+    df_donors.WEIGHT[df_donors.WEIGHT .≈ 0.] .= missing
+    df_donors.HEIGHT[df_donors.HEIGHT .≈ 0.] .= missing
 
-    return df
+    filtered_df = similar(df_donors, 0)
+    for g in groupby(df_donors, :DON_ID)
+        append!(filtered_df, filter_offers_until_last_acceptance(g))
+    end
+
+    return filtered_df
 end
 
 """
