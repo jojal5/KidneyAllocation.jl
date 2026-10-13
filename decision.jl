@@ -5,30 +5,29 @@ using CSV, DataFrames, Dates, JLD2, Random, Test
 
 using KidneyAllocation
 
-import KidneyAllocation: build_recipient_registry, build_donor_registry
+# import KidneyAllocation: build_recipient_registry, build_donor_registry
 
-recipients_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Candidates.csv"
-donors_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Donors.csv"
+recipient_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Candidates.csv"
+donor_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Donors.csv"
 cpra_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/CandidatesCPRA.csv"
 
-recipient_registry = build_recipient_registry(recipients_filepath, cpra_filepath)
-donor_registry = build_donor_registry(donors_filepath)
 
-df = KidneyAllocation.load_recipient(recipients_filepath)
-recipient_exit = Dict{Int,Union{DateTime, Nothing}}()
-for g in groupby(df, :CAN_ID)
-    exit_date = KidneyAllocation.first_exit_date(g)
-    recipient_exit[first(g.CAN_ID)] = exit_date
-end
+df_recipients, df_donors = KidneyAllocation.load_data(recipient_filepath, cpra_filepath, donor_filepath)
 
 
-df = KidneyAllocation.load_donor(donors_filepath)
+# Filter the recipients and donors to the period from 2016 to 2019 inclusively
+filter!(row -> row.CAN_LISTING_DT ≥ DateTime(2016,1,1) && row.CAN_LISTING_DT ≥ DateTime(2019,12,31), df_recipients)
+filter!(row -> row.DON_DEATH_TM ≥ DateTime(2016,1,1) && row.DON_DEATH_TM ≥ DateTime(2019,12,31), df_donors)
+
+
+donor_registry, given_kidneys = KidneyAllocation.build_donor_registry(df_donors) 
+recipient_registry, time_to_first_offer_registry, time_to_transplant_registry = KidneyAllocation.build_recipient_registry(df_recipients)
 
 don_id = collect(keys(donor_registry))
 can_id = collect(keys(recipient_registry))
 
 # Filter the dataframe for retrieving donors with all the information
-filter!(:DON_ID => id -> id ∈ don_id, df)
+df = filter(:DON_ID => id -> id ∈ don_id, df_donors)
 filter!(:CAN_ID => id -> id ∈ can_id, df)
 
 m = nrow(df)
@@ -47,8 +46,6 @@ score = Vector{Float64}(undef, m)
 
 decision = falses(m)
 learning_set = Vector{String}(undef, m)
-
-first_registration = trues(m)
 
 n_train = round(Int, length(don_id) * 0.8)
 rng = MersenneTwister(12345)
@@ -70,10 +67,6 @@ for i in 1:m
 
     decision[i] = uppercase(strip(df.DECISION[i])) == "ACCEPTATION"
 
-    if r.arrival > d.arrival
-        first_registration[i] = false
-    end 
-
     learning_set[i] = df.DON_ID[i] ∈ train_id ? "training" : "validation"
 
 end
@@ -87,11 +80,8 @@ data = DataFrame(DON_AGE = don_age,
     MISMATCH = mismatch,
     DON_CAN_SCORE = score,
     DECISION = decision,
-    FIRST_REGISTRATION = first_registration,
     LEARNING_SET = learning_set
 )
-
-filter!(row-> row.FIRST_REGISTRATION, data)
 
 data_train = filter(row -> row.LEARNING_SET == "training", data)
 data_validation = filter(row -> row.LEARNING_SET == "validation", data)
@@ -103,7 +93,7 @@ import KidneyAllocation: auc, brier_score
 # model = @formula(DECISION ~ log(KDRI) + CAN_BLOOD + CAN_WAIT + CAN_WAIT^2 + CPRA + CPRA^2 + CAN_AGE + CAN_AGE^2 + DON_CAN_SCORE)
 # model = @formula(DECISION ~ KDRI + CAN_AGE * KDRI * CAN_WAIT + CAN_AGE^2 * KDRI * CAN_WAIT^2 + CAN_BLOOD + CPRA + DON_CAN_SCORE)
 
-model = @formula(DECISION ~ log(KDRI)*CAN_AGE + CAN_BLOOD)
+model = @formula(DECISION ~ log(KDRI) + CAN_AGE + CAN_BLOOD + DON_CAN_SCORE)
 
 fm = glm(model, data_train, Bernoulli(), LogitLink())
 
@@ -126,31 +116,21 @@ brier_score(gt, p)
 
 fm = glm(model, data, Bernoulli(), LogitLink())
 
+gt = data.DECISION
+p = float.(GLM.predict(fm, data))
+
+auc(gt, p)
+brier_score(gt, p)
+
 u = KidneyAllocation.fit_threshold_f1(data.DECISION, GLM.predict(fm))
 
 dm = GLMDecisionModel(fm, u)
 
 jldsave("src/SyntheticData/GLMDecisionModel.jld2"; dm)
 
-
-## test
-
-
-
-d = donor_registry[1301]
-r = recipient_registry[1025]
-
-KidneyAllocation.acceptance_probability(dm, r, d)
-
-
-
-
-
-
 ## Fit decision model based on classification tree on the training set
 
 using DecisionTree
-
 
 features = Symbol.([
     "DON_AGE"
@@ -213,6 +193,12 @@ X = KidneyAllocation.construct_feature_matrix_from_df(data, features)
 y = data.DECISION
 
 DecisionTree.fit!(m, X, y)
+
+gt = y
+p = DecisionTree.predict_proba(m, X)[:, 2]
+
+auc(gt, p)
+brier_score(gt, p)
 
 # u = fit_threshold_prevalence(data.DECISION, DecisionTree.predict_proba(m, X)[:,2])
 u = KidneyAllocation.fit_threshold_f1(data.DECISION, DecisionTree.predict_proba(m, X)[:,2])

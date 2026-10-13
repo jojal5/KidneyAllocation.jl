@@ -18,8 +18,8 @@ df_recipients, df_donors = KidneyAllocation.load_data(recipient_filepath, cpra_f
 df_recipients
 df_donors
 
-
-
+donor_registry, given_kidneys = KidneyAllocation.build_donor_registry(df_donors) 
+recipient_registry, time_to_first_offer_registry, time_to_transplant_registry = KidneyAllocation.build_recipient_registry(df_recipients)
 
 
 

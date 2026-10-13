@@ -565,7 +565,8 @@ function build_donor_registry(df_donors::AbstractDataFrame)
         n = count(g.DECISION .== "Acceptation")
 
         donor_registry[r.DON_ID] = donor
-        given_kidneys[r.DON_ID] = n == 0 ? 1 : n  # Parfois, le nombre de reins est égal à 0 car on a retiré le receveur qui la reçu en raison des multiples inscriptions 
+        given_kidneys[r.DON_ID]= infer_number_of_kidneys_offered(g)
+        # given_kidneys[r.DON_ID] = n == 0 ? 1 : n  # Parfois, le nombre de reins est égal à 0 car on a retiré le receveur qui la reçu en raison des multiples inscriptions 
     end
 
     return donor_registry, given_kidneys
