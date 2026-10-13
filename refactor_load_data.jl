@@ -151,6 +151,8 @@ function load_data(recipient_filepath::AbstractString, cpra_filepath::AbstractSt
 
         if uppercase(strip(r.OUTCOME)) == "TX"
             time_to_transplant[i] = Dates.days(r.UPDATE_TM - r.CAN_LISTING_DT)
+        else
+            time_to_transplant[i] = missing
         end
 
         active_waiting_proportion[i] = KidneyAllocation.recipient_active_waiting_proportion(df_recipient)
@@ -337,3 +339,12 @@ end
 
 d, t1, t2 = build_recipient_registry(df_recipients)
 
+
+
+# Il me reste à :
+# - compter le nombre de reins donnés avant de filtrer les offres et patients.
+# - réajuster le modèle de décision (2016 à 2020)
+# - sélectionner les vrais receveurs à prédire (2016 à 2020 TX)
+# - construire les Registry
+# - calculer les taux d'arrivées (2016 à 2020)
+# - lancer les simulations sur les patients sélectionnés

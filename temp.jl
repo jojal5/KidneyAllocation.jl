@@ -13,6 +13,134 @@ cpra_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-resea
 donor_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Donors.csv"
 
 
+import KidneyAllocation: check_df_columns, check_df_column_constant
+
+df = CSV.read(donor_filepath, DataFrame, missingstring=["","-", "NULL"])
+dropmissing!(df, :DECISION)
+
+id = [4711, 7839, 6028, 6796] 
+
+filter!(row -> row.DON_ID ∈ id, df)
+
+select!(df, :DON_ID, :DON_CAN_SCORE, :DECISION, :STATUS)
+CSV.write("offers.csv", df)
+
+G = groupby(df, :DON_ID)
+
+for g in G
+    decision = uppercase.(strip.(g.DECISION))
+    if count(decision .== "ACCEPTATION") > 2
+        println(first(g.DON_ID))
+    end
+end
+
+# Deux offres acceptées
+filter!(row -> row.DON_ID == 4711, df)
+
+# Toutes refusées
+filter!(row -> row.DON_ID == 6028, df)
+
+# Plus que deux acceptées
+filter!(row -> row.DON_ID == 6796, df)
+
+# Une seule acceptée
+filter!(row -> row.DON_ID == 7839, df)
+
+
+
+
+"""
+    filter_offers_until_last_acceptance(df_donors::AbstractDataFrame) -> DataFrame
+
+For each donor, retain offers up to and including the last recipient with
+status `"TX"` after sorting recipients by decreasing score.
+"""
+function filter_offers_until_last_acceptance(df_donor::AbstractDataFrame)::DataFrame
+
+    check_df_column_constant(df_donor, :DON_ID)
+    check_df_columns(df_donor, :DON_CAN_SCORE, :DECISION)
+    
+    ranked_df = sort(df_donor, :DON_CAN_SCORE, rev=true)
+    last_acceptance = findlast(isequal("ACCEPTATION"), uppercase.(strip.(ranked_df.DECISION)))
+
+    if isnothing(last_acceptance)
+        return ranked_df
+    else
+        return first(ranked_df, last_acceptance)
+    end
+end
+
+# filter_offers_until_last_acceptance(df)
+
+
+
+df = CSV.read("test/data/offers.csv", DataFrame)
+G = groupby(df, :DON_ID)
+
+@testset "filter_offers_until_last_acceptance()" begin
+
+    filtered_df = filter_offers_until_last_acceptance(G[1])
+    @test nrow(filtered_df) == 13
+    @test uppercase(strip(last(filtered_df.DECISION))) == "ACCEPTATION"
+
+    filtered_df = filter_offers_until_last_acceptance(G[2])
+    @test nrow(filtered_df) == 42
+
+    filtered_df = filter_offers_until_last_acceptance(G[3])
+    @test nrow(filtered_df) == 3
+    @test uppercase(strip(last(filtered_df.DECISION))) == "ACCEPTATION"
+
+    filtered_df = filter_offers_until_last_acceptance(G[4])
+    @test nrow(filtered_df) == 1
+    @test uppercase(strip(last(filtered_df.DECISION))) == "ACCEPTATION"
+
+end
+
+
+
+"""
+    infer_number_of_offered_kidney(df_donor::AbstractDataFrame)::Int
+
+Infer the number of given kidneys for the single donor history in `df_donor`.
+
+
+"""
+function infer_number_of_offered_kidney(df_donor::AbstractDataFrame)::Int
+
+    check_df_column_constant(df_donor, :DON_ID)
+
+    status = uppercase.(strip.(skipmissing(df_donor.STATUS)))
+
+    n_transplanted = count(status .== "TX")
+
+    n_offered = n_transplanted > 0 ? n_transplanted : 2
+
+    return n_offered
+end
+
+
+@testset "infer_number_of_offered_kidney()" begin
+    @test infer_number_of_offered_kidney(G[1]) == 2
+    @test infer_number_of_offered_kidney(G[2]) == 2 # No kidney has been accepted but we suppos that 2 were offered
+    @test infer_number_of_offered_kidney(G[3]) == 2 # 3 recipients have accepted, but only 2 kidneys were transplanted
+    @test infer_number_of_offered_kidney(G[4]) == 1 # Only one kidney offered and it is accepted
+end
+
+
+
+
+
+
+
+df
+
+count(skipmissing(df.STATUS .== "TX"))
+status = uppercase.(strip.(skipmissing(df.STATUS)))
+
+n = count(status .== "TX")
+
+
+
 res = CSV.read("/Users/jalbert/Dropbox/Files/Supervision/encours/AnastasiyaOlekBasanets/Simulations/11634.csv", DataFrame)
 
 nsim = 1000

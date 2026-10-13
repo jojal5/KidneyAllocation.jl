@@ -1,8 +1,43 @@
+"""
+    check_df_columns(df::AbstractDataFrame, cols::Symbol...) -> Nothing
 
-# # Normalize Date / DateTime to DateTime
-# _dt(x::DateTime) = x
-# _dt(x::Date) = DateTime(x)
+Verify that `df` contains every column in `cols` and that none contains `missing`. Throw an `ArgumentError` otherwise.
+"""
+function check_df_columns(df::AbstractDataFrame, cols::Symbol...)
+    available_cols = propertynames(df)
 
+    for col in cols
+        col ∈ available_cols ||
+            throw(ArgumentError("Missing column :$col"))
+
+        any(ismissing, df[!, col]) &&
+            throw(ArgumentError("Column :$col contains missing values"))
+    end
+
+    return nothing
+end
+
+"""
+    check_df_column_constant(df::AbstractDataFrame, col::Symbol) -> Nothing
+
+Verify that all values in column `col` are identical. Throw an `ArgumentError` otherwise.
+"""
+function check_df_column_constant(df::AbstractDataFrame, cols::Symbol...)
+
+    isempty(df) && return nothing
+
+    for col in cols
+        check_df_columns(df, col)
+    
+        values = df[!, col]
+        all(==(first(values)), values) ||
+            throw(ArgumentError(
+                "All rows must have the same value in column :$col",
+            ))
+    end
+
+    return nothing
+end
 
 """
     days_between(d1::Date, d2::Date) -> Int
@@ -29,7 +64,7 @@ end
 
 Compute the fractional number of years between two dates.
 
-## Details
+# Details
 
 The calculation is based on the total number of days divided by 365.25,
 providing an approximation that accounts for leap years on average.

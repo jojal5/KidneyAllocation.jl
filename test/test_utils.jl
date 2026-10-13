@@ -1,5 +1,35 @@
 @testset "utils.jl" begin
 
+    @testset "check dataframe columns" begin
+
+        import KidneyAllocation: check_df_columns, check_df_column_constant
+        df = CSV.read("data/unfiltered_outcomes.csv", DataFrame)
+        g = groupby(df, :CAN_ID)
+
+        @testset "check_df_columns" begin
+            @test check_df_columns(df, :CAN_ID, :UPDATE_TM, :OUTCOME) === nothing
+
+            df2 = similar(df, 0)
+            @test check_df_columns(df2, :CAN_ID, :UPDATE_TM, :OUTCOME) === nothing
+
+            @test_throws ArgumentError check_df_columns(df, :INEXISTENT)
+
+            df3 = df[1:2, :]
+            allowmissing!(df3, 5)
+            df3[1, 5] = missing
+
+            @test_throws ArgumentError check_df_columns(df3, :CAN_ID, :UPDATE_TM, :OUTCOME)
+        end
+
+        @testset "check_df_column_constant" begin
+
+            @test_throws ArgumentError check_df_column_constant(df, :CAN_ID)
+
+            @test check_df_column_constant(g[1], :CAN_ID) === nothing
+
+        end
+    end
+
     import KidneyAllocation: days_between, fractionalyears_between, years_between
 
     @testset "days_between()" begin

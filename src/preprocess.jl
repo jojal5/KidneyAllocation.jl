@@ -1,3 +1,60 @@
+
+# Function for Recipients and Donors
+
+"""
+    fill_hla_pair!(df, col1, col2)
+
+Replace `missing` values in `col1` (resp. `col2`) by the value in `col2`
+(resp. `col1`). Operates in place.
+"""
+function fill_hla_pair!(df::AbstractDataFrame, col1::Symbol, col2::Symbol)
+    df[!, col1] = coalesce.(df[!, col1], df[!, col2])
+    df[!, col2] = coalesce.(df[!, col2], df[!, col1])
+    return df
+end
+
+"""
+    fill_hla_pairs!(df, prefix)
+
+Fill missing HLA allele values (A, B, DR) from their paired column in place.
+"""
+function fill_hla_pairs!(df::AbstractDataFrame, prefix::AbstractString)
+    loci = ["A", "B", "DR"]
+    for locus in loci
+        col1 = Symbol("$(prefix)_$(locus)1")
+        col2 = Symbol("$(prefix)_$(locus)2")
+        fill_hla_pair!(df, col1, col2)
+    end
+    return df
+end
+
+"""
+    harmonize_col!(df; col, idcol=:CAN_ID) -> DataFrame
+
+Ensure that `col` has at most one non-missing value per `idcol` group and
+fill missing entries with that value. Throws an error if multiple distinct
+non-missing values are found within a group.
+"""
+function harmonize_col!(df::DataFrame; col::Symbol, idcol::Symbol=:CAN_ID)
+
+    val_by_id = Dict{Int,Union{Missing,eltype(skipmissing(df[!, col]))}}()
+
+    for g in groupby(df, idcol)
+        id = g[1, idcol]
+        vals = unique(skipmissing(g[!, col]))
+        if length(vals) == 0
+            val_by_id[id] = missing
+        elseif length(vals) == 1
+            val_by_id[id] = first(vals)
+        else
+            throw(ArgumentError("Multiple $(col) values for $(idcol)=$id: $(collect(vals))"))
+        end
+    end
+
+    df[!, col] = coalesce.(df[!, col], getindex.(Ref(val_by_id), df[!, idcol]))
+    return df
+end
+
 """
     parse_hla_int(s::Union{AbstractString,Missing}) -> Union{Int64,Missing}
 
@@ -20,46 +77,9 @@ function parse_hla_int(s::Union{AbstractString,Missing})::Union{Int64,Missing}
     return parse(Int64, m.captures[1])
 end
 
-"""
-    check_df_columns(df::AbstractDataFrame, cols::Symbol...) -> Nothing
 
-Verify that `df` contains every column in `cols` and that none contains `missing`. Throw an `ArgumentError` otherwise.
-"""
-function check_df_columns(df::AbstractDataFrame, cols::Symbol...)
-    available_cols = propertynames(df)
 
-    for col in cols
-        col ∈ available_cols ||
-            throw(ArgumentError("Missing column :$col"))
-
-        any(ismissing, df[!, col]) &&
-            throw(ArgumentError("Column :$col contains missing values"))
-    end
-
-    return nothing
-end
-
-"""
-    check_df_column_constant(df::AbstractDataFrame, col::Symbol) -> Nothing
-
-Verify that all values in column `col` are identical. Throw an `ArgumentError` otherwise.
-"""
-function check_df_column_constant(df::AbstractDataFrame, cols::Symbol...)
-
-    isempty(df) && return nothing
-
-    for col in cols
-        check_df_columns(df, col)
-    
-        values = df[!, col]
-        all(==(first(values)), values) ||
-            throw(ArgumentError(
-                "All rows must have the same value in column :$col",
-            ))
-    end
-
-    return nothing
-end
+# Functions for Recipents
 
 """
     check_df_at_most_one_exit_outcome(df, outcomes=...) -> Nothing
@@ -94,161 +114,32 @@ function check_df_at_most_one_exit_outcome(
 end
 
 """
-    get_last_update(df::AbstractDataFrame) -> Tuple{DateTime, String}
+    coalesce_listing!(df::AbstractDataFrame) -> AbstractDataFrame
 
-Return the time and outcome of the most recent update retained by
-`filter_outcomes` for a single recipient. 
+Replace each missing value in `:CAN_LISTING_DT` with the corresponding value
+in `:CAN_DIAL_DT`, modifying `df` in place.
+
+`df` must contain `:CAN_LISTING_DT` and `:CAN_DIAL_DT`. Values in
+`:CAN_DIAL_DT` must be non-missing.
 """
-function get_last_update(df::AbstractDataFrame)::Tuple{DateTime, String}
+function coalesce_listing!(df::AbstractDataFrame)
+    for col in (:CAN_LISTING_DT, :CAN_DIAL_DT)
+        col ∈ propertynames(df) ||
+            throw(ArgumentError("Missing column :$col"))
+    end
 
-    isempty(df) && throw(ArgumentError("DataFrame is empty"))
-
-    check_df_columns(df, :OUTCOME, :UPDATE_TM)
-    check_df_column_constant(df, :CAN_ID)
-
-    filtered_df = filter_outcomes(df)
-    last_index = argmax(filtered_df.UPDATE_TM)
-
-    return (filtered_df.UPDATE_TM[last_index], String(filtered_df.OUTCOME[last_index]))
-end
-
-"""
-    get_expiration_date(df::AbstractDataFrame) -> Union{DateTime,Nothing}
-
-Return the time of the latest retained update if its outcome indicates a
-permanent exit from the waiting list; otherwise return `nothing`.
-"""
-function get_expiration_date(df::AbstractDataFrame)::Union{DateTime,Nothing}
-    expiration_outcomes = ("X", "TX VIVANT", "DCD")
-
-    date, outcome = get_last_update(df)
-
-    return uppercase(strip(outcome)) ∈ expiration_outcomes ? date : nothing
-end
-
-"""
-    get_exit_date(df::AbstractDataFrame) -> Union{DateTime,Nothing}
-
-Return the time of the first recorded exit from the waiting list for a single
-recipient, or `nothing` if no exit outcome is recorded.
-"""
-function get_exit_date(df::AbstractDataFrame)::Union{DateTime,Nothing}
-    exit_outcomes = ("TX", "TX VIVANT", "X", "DCD")
-
-    date, outcome = get_last_update(df)
-
-    return uppercase(strip(outcome)) ∈ exit_outcomes ? date : nothing
-end
-
-"""
-    first_exit_date(df::AbstractDataFrame) -> Union{DateTime,Nothing}
-
-Return the earliest update time associated with an exit outcome for a single
-recipient, or `nothing` if no exit outcome is recorded.
-"""
-function first_exit_date(df::AbstractDataFrame)::Union{DateTime,Nothing}
-    isempty(df) && return nothing
-
-    check_df_column_constant(df, :CAN_ID)
-    check_df_columns(df, :OUTCOME, :UPDATE_TM)
-
-    exit_outcomes = ("X", "TX VIVANT", "DCD", "TX")
-    earliest_exit_time = nothing
+    any(ismissing, df[!, :CAN_DIAL_DT]) &&
+        throw(ArgumentError("Column :CAN_DIAL_DT contains missing values"))
 
     for row in eachrow(df)
-        outcome = uppercase(strip(string(row.OUTCOME)))
-
-        if outcome ∈ exit_outcomes
-            update_time = DateTime(row.UPDATE_TM)
-
-            earliest_exit_time = isnothing(earliest_exit_time) ?
-                update_time :
-                min(earliest_exit_time, update_time)
+        if ismissing(row.CAN_LISTING_DT)
+            row.CAN_LISTING_DT = row.CAN_DIAL_DT
         end
     end
 
-    return earliest_exit_time
+    return df
 end
 
-"""
-    filter_outcomes(df::AbstractDataFrame) -> DataFrame
-
-Return records from the first waiting-list episode of a single recipient.
-
-Rows after the first exit outcome are removed, while the exit record is
-retained. Exact duplicate retained rows are removed.
-(Happen for recipients 501, 827 and 2051)
-
-If every retained `UPDATE_TM` precedes the recorded `CAN_LISTING_DT`,
-`CAN_LISTING_DT` is replaced by `CAN_DIAL_DT` as a proxy for the unavailable
-original listing date.
-
-`:UPDATE_TM` must contain `DateTime` values so that outcomes occurring on the
-same calendar date can be ordered correctly.
-"""
-function filter_outcomes(df::AbstractDataFrame)::DataFrame
-    isempty(df) && return DataFrame(df)
-
-    check_df_column_constant(df, :CAN_ID, :CAN_LISTING_DT, :CAN_DIAL_DT)
-    check_df_columns(df, :OUTCOME, :UPDATE_TM)
-
-    update_type = eltype(skipmissing(df[!, :UPDATE_TM]))
-
-    update_type <: DateTime || throw(ArgumentError("Column :UPDATE_TM must contain DateTime values; got $update_type"))
-
-    exit_time = first_exit_date(df)
-
-    if exit_time === nothing
-        filtered_df = DataFrame(df)
-    else
-        filtered_df = filter(:UPDATE_TM => date -> date ≤ exit_time, df)
-
-        listing_date = first(filtered_df.CAN_LISTING_DT)
-        dialysis_date = convert(typeof(listing_date), first(filtered_df.CAN_DIAL_DT))
-
-        if maximum(filtered_df.UPDATE_TM) < listing_date
-            filtered_df.CAN_LISTING_DT .= dialysis_date
-        end
-
-    end
-
-    # Removing duplicated rows (happens for recipient 501, 827 and 2051)
-    unique!(filtered_df)
-
-    return filtered_df
-end
-
-
-"""
-    first_exit_after_dialysis(df) -> Union{DateTime,Nothing}
-
-Return the first exit time on or after the recorded dialysis time for a
-single recipient, or `nothing` if no such exit exists.
-"""
-function first_exit_after_dialysis(
-    df::AbstractDataFrame,
-)::Union{DateTime,Nothing}
-
-    check_df_columns(df, :CAN_ID, :CAN_DIAL_DT, :OUTCOME, :UPDATE_TM)
-    check_df_column_constant(df, :CAN_ID, :CAN_DIAL_DT)
-
-    isempty(df) && return nothing
-
-    dialysis_time = DateTime(first(df.CAN_DIAL_DT))
-    exit_outcomes = ("X", "TX VIVANT", "DCD", "TX")
-    exit_time = nothing
-
-    for row in eachrow(df)
-        update_time = DateTime(row.UPDATE_TM)
-        outcome = uppercase(strip(string(row.OUTCOME)))
-
-        update_time ≥ dialysis_time && outcome ∈ exit_outcomes || continue
-
-        exit_time = isnothing(exit_time) ? update_time : min(exit_time, update_time)
-    end
-
-    return exit_time
-end
 
 """
     filter_dialysis_episode(df) -> DataFrame
@@ -292,7 +183,99 @@ function filter_dialysis_episode(df::AbstractDataFrame)::DataFrame
     return unique!(episode_df)
 end
 
+"""
+    first_exit_after_dialysis(df) -> Union{DateTime,Nothing}
 
+Return the first exit time on or after the recorded dialysis time for a
+single recipient, or `nothing` if no such exit exists.
+"""
+function first_exit_after_dialysis(df::AbstractDataFrame)::Union{DateTime,Nothing}
+
+    check_df_columns(df, :CAN_ID, :CAN_DIAL_DT, :OUTCOME, :UPDATE_TM)
+    check_df_column_constant(df, :CAN_ID, :CAN_DIAL_DT)
+
+    isempty(df) && return nothing
+
+    dialysis_time = DateTime(first(df.CAN_DIAL_DT))
+    exit_outcomes = ("X", "TX VIVANT", "DCD", "TX")
+    exit_time = nothing
+
+    for row in eachrow(df)
+        update_time = DateTime(row.UPDATE_TM)
+        outcome = uppercase(strip(string(row.OUTCOME)))
+
+        update_time ≥ dialysis_time && outcome ∈ exit_outcomes || continue
+
+        exit_time = isnothing(exit_time) ? update_time : min(exit_time, update_time)
+    end
+
+    return exit_time
+end
+
+"""
+    get_expiration_date(df::AbstractDataFrame) -> Union{DateTime,Nothing}
+
+Return the time of the latest retained update if its outcome indicates a
+permanent exit from the waiting list; otherwise return `nothing`.
+"""
+function get_expiration_date(r::DataFrameRow)::Union{DateTime,Nothing}
+    expiration_outcomes = ("X", "TX VIVANT", "DCD")
+
+    return uppercase(strip(r.OUTCOME)) ∈ expiration_outcomes ? r.UPDATE_TM : nothing
+end
+
+"""
+    load_recipient(filepath::AbstractString)
+
+Load the CSV file containing recipient information and return a cleaned `DataFrame`.
+
+### Details
+
+Cleaning steps:
+- Replace the values `24L` and `24Low` with `24` in `CAN_A2`.
+- Keep only kidney transplant recipients (exclude multi-organ outcomes).
+- Remove recipients with missing dialysis date (`CAN_DIAL_DT`).
+- If listing date is missing, replace it by the dialysis date.
+- If listing date is after dialysis date, replace the listing date by the dialysis date.
+- Keeping only adult recipients (18 years old and older)
+- Convert `DateTime` columns to `Date`.
+"""
+function load_recipient(filepath::AbstractString)
+    df = CSV.read(filepath, DataFrame, missingstring=["-", "", "NULL"])
+
+    # Replacing the value 24L and 24Low with 24 for instance
+    df.CAN_A2 = parse_hla_int.(df.CAN_A2)
+
+    fill_hla_pairs!(df, "CAN")
+
+    # Harmonize columns when some rows have missig value for a same recipient
+    col_to_harmonize = [:CAN_BTH_DT, :CAN_BLOOD, :CAN_DIAL_DT]
+    for col in col_to_harmonize
+        harmonize_col!(df, col=col, idcol=:CAN_ID)
+    end
+
+    # Keeping only the recipients for kidney transplant
+    filter!(row -> uppercase(strip(row.OUTCOME)) ∈ ("TX", "1", "0", "X", "DCD", "TX VIVANT"), df)
+
+    # Removing the recipient where the dialysis time is missing. It happens for recipients that received a kidney from a living donor.
+    dropmissing!(df, [:CAN_DIAL_DT])
+
+    # If listing time is missing, replacing it by the dialysis time.
+    coalesce_listing!(df)
+
+    # Keeping only adult recipients
+    filter!(row -> years_between(row.CAN_BTH_DT, row.CAN_LISTING_DT) > 17, df)
+
+    # Keeping only the first outcome after the registered dialysis date for each recipient. 
+    # Some recipients are registered more than once and key information are lost for the additional registrations.
+    # We keep the history corresponding to the recorded dialysis date.
+    filtered_df = similar(df, 0)
+    for g in groupby(df, :CAN_ID)
+        append!(filtered_df, filter_dialysis_episode(g))
+    end
+
+    return filtered_df
+end
 
 """
     recipient_active_waiting_proportion(df::AbstractDataFrame) -> Float64
@@ -335,31 +318,32 @@ function recipient_active_waiting_proportion(df::AbstractDataFrame)::Float64
 end
 
 """
-    fill_hla_pair!(df, col1, col2)
+    recipient_from_row(
+        r::DataFrameRow,
+        cpra::Integer=0;
+        expiration_date=nothing,
+        active_waiting_proportion=1.0,
+    ) -> Recipient
 
-Replace `missing` values in `col1` (resp. `col2`) by the value in `col2`
-(resp. `col1`). Operates in place.
+Construct a `Recipient` from one row of a recipient's history. Required values
+in `r` are assumed non-missing.
 """
-function fill_hla_pair!(df::AbstractDataFrame, col1::Symbol, col2::Symbol)
-    df[!, col1] = coalesce.(df[!, col1], df[!, col2])
-    df[!, col2] = coalesce.(df[!, col2], df[!, col1])
-    return df
+function recipient_from_row(r::DataFrameRow)
+
+    blood = parse_abo(String(r.CAN_BLOOD))
+    expiration_date = get_expiration_date(r)
+
+    return Recipient(
+        r.CAN_BTH_DT, r.CAN_DIAL_DT, r.CAN_LISTING_DT, blood,
+        r.CAN_A1, r.CAN_A2, r.CAN_B1, r.CAN_B2, r.CAN_DR1, r.CAN_DR2,
+        r.CPRA,
+        expiration_date = expiration_date,
+        active_waiting_proportion = r.active_waiting_proportion,
+    )
 end
 
-"""
-    fill_hla_pairs!(df, prefix)
 
-Fill missing HLA allele values (A, B, DR) from their paired column in place.
-"""
-function fill_hla_pairs!(df::AbstractDataFrame, prefix::AbstractString)
-    loci = ["A", "B", "DR"]
-    for locus in loci
-        col1 = Symbol("$(prefix)_$(locus)1")
-        col2 = Symbol("$(prefix)_$(locus)2")
-        fill_hla_pair!(df, col1, col2)
-    end
-    return df
-end
+# Function for Donors
 
 """
     filter_offers_until_last_acceptance(df_donors::AbstractDataFrame) -> DataFrame
@@ -419,8 +403,8 @@ function load_donor(filepath::String)
     select!(df, Not(cols_to_drop))
 
     allowmissing!(df, [:WEIGHT, :HEIGHT])
-    df.WEIGHT[df.WEIGHT.≈0.] .= missing
-    df.HEIGHT[df.HEIGHT.≈0.] .= missing
+    df.WEIGHT[df.WEIGHT .≈ 0.] .= missing
+    df.HEIGHT[df.HEIGHT .≈ 0.] .= missing
 
     return df
 end
@@ -451,22 +435,88 @@ function donor_from_row(r::DataFrameRow)
     return donor
 end
 
+# Load preprocessed data
 
-"""
-    build_donor_registry(filepath::String) -> Dict{Int,Donor}
 
-Build a dictionary of `Donor` objects keyed by `DON_ID` from a donor CSV file.
+function load_data(recipient_filepath::AbstractString, cpra_filepath::AbstractString, donor_filepath::AbstractString)
 
-Rows with missing values required to construct a donor and compute KDRI are
-discarded. For each `DON_ID`, one `Donor` is constructed from the corresponding
-row using `donor_from_row`.
+    df_recipients = load_recipient(recipient_filepath)
+    df_donors = load_donor(donor_filepath)
+    df_cpra = CSV.read(cpra_filepath, DataFrame; missingstring=["-", "", "NULL"])
 
-### Notes
-- The donor arrival date is derived from the donor death date (`DON_DEATH_TM`).
-- Rows with incomplete data required for KDRI computation are discarded.
-"""
-function build_donor_registry(filepath::String)::Dict{Int,Donor}
-    df = load_donor(filepath)
+    G = groupby(df_recipients, :CAN_ID)
+
+    filtered_df_recipients = similar(df_recipients, 0)
+    filtered_df_donors = similar(df_donors, 0)
+
+    cpra = Vector{Int64}(undef, length(G))
+    time_to_first_offer = Vector{Union{Int64,Missing}}(undef, length(G))
+    time_to_transplant = Vector{Union{Int64,Missing}}(undef, length(G))
+    active_waiting_proportion = Vector{Union{Float64,Missing}}(undef, length(G))
+
+    exit_status = ["TX", "TX VIVANT", "X", "DCD"]
+
+    for (i, df_recipient) in enumerate(G)
+
+        r = last(sort(df_recipient, :UPDATE_TM))
+        push!(filtered_df_recipients, r)
+
+        CAN_ID = r.CAN_ID
+        listing_date = r.CAN_LISTING_DT
+        exit_date = uppercase(strip(r.OUTCOME)) ∈ exit_status ? r.UPDATE_TM : nothing
+
+
+        df_cpra_recipient = filter(row -> row.CAN_ID == CAN_ID, df_cpra)
+
+        if isempty(df_cpra_recipient)
+            cpra[i] = 0
+        else
+            target = r.UPDATE_TM
+            nearest_index = argmin(abs.(df_cpra_recipient.UPDATE_TM .- target))
+            cpra[i] = Int(df_cpra_recipient.CAN_CPRA[nearest_index])
+        end
+
+
+        if uppercase(strip(r.OUTCOME)) == "TX"
+            time_to_transplant[i] = Dates.days(r.UPDATE_TM - r.CAN_LISTING_DT)
+        else
+            time_to_transplant[i] = missing
+        end
+
+        active_waiting_proportion[i] = KidneyAllocation.recipient_active_waiting_proportion(df_recipient)
+
+
+        df_offers = filter(row -> row.CAN_ID == CAN_ID && row.DON_DEATH_TM ≥ listing_date, df_donors)
+
+        if !isnothing(exit_date)
+            filter!(row -> row.DON_DEATH_TM ≤ exit_date, df_offers)
+        end
+
+        # Filtre les df_donors pour ne garder que les lignes qui correspondent à la bonne date de dialyse des receveurs
+        append!(filtered_df_donors, df_offers)
+
+        if !isempty(df_offers)
+            time_to_first_offer[i] = Dates.days(minimum(df_offers.DON_DEATH_TM) - listing_date)
+        else
+            time_to_first_offer[i] = missing
+        end
+
+    end
+
+    filtered_df_recipients.CPRA = cpra
+    filtered_df_recipients.active_waiting_proportion = active_waiting_proportion
+    filtered_df_recipients.time_to_first_offer = time_to_first_offer
+    filtered_df_recipients.time_to_transplant = time_to_transplant
+
+    # Si time_to_first_offer == missing mais qu'on a time_to_transplant != missing, time_to_first_offer est fixé à time_to_transplant
+    filtered_df_recipients[!, :time_to_first_offer] = coalesce.(filtered_df_recipients[!, :time_to_first_offer], filtered_df_recipients[!, :time_to_transplant])
+
+    return filtered_df_recipients, filtered_df_donors
+
+end
+
+
+function build_donor_registry(df_donors::AbstractDataFrame)
 
     kdri_required = Symbol[
         :DON_ID, :DON_AGE, :HEIGHT, :WEIGHT, :HYPERTENSION, :DIABETES, :DEATH, :CREATININE, :DCD
@@ -475,177 +525,22 @@ function build_donor_registry(filepath::String)::Dict{Int,Donor}
         :DON_DEATH_TM, :DON_AGE, :DON_BLOOD, :DON_A1, :DON_A2, :DON_B1, :DON_B2, :DON_DR1, :DON_DR2
     ]
 
-    dropmissing!(df, kdri_required)
-    dropmissing!(df, donor_required)
+    filtered_df_donors = dropmissing(df_donors, kdri_required)
+    dropmissing!(filtered_df_donors, donor_required)
 
-    donor_by_don_id = Dict{Int,Donor}()
+    donor_registry = Dict{Int,Donor}()
+    given_kidneys = Dict{Int,Int}()
 
-    for g in groupby(df, :DON_ID)
+    for g in groupby(filtered_df_donors, :DON_ID)
         r = first(g)
-        don_id = r.DON_ID
-        donor_by_don_id[don_id] = donor_from_row(r)
+        donor = donor_from_row(r)
+        n = count(g.DECISION .== "Acceptation")
+
+        donor_registry[r.DON_ID] = donor
+        given_kidneys[r.DON_ID] = n == 0 ? 1 : n  # Parfois, le nombre de reins est égal à 0 car on a retiré le receveur qui la reçu en raison des multiples inscriptions 
     end
 
-    return donor_by_don_id
-end
-
-"""
-    kidneys_given_by_donor(df_donors) -> Dict{Int,Int}
-
-Return the number of given kidneys for each `DON_ID`.
-"""
-function kidneys_given_by_donor(df_donors::AbstractDataFrame)
-    @assert "DON_ID" in names(df_donors) "Missing column :DON_ID"
-    @assert "STATUS" in names(df_donors) "Missing column :STATUS"
-
-    kidney_by_don_id = Dict{Int,Int}()
-
-    for g in groupby(df_donors, :DON_ID)
-       kidney_by_don_id[g.DON_ID[1]] = count(==("TX"), skipmissing(g.STATUS))
-    end
-
-    return kidney_by_don_id
-
-end
-
-
-"""
-    load_recipient(filepath::AbstractString)
-
-Load the CSV file containing recipient information and return a cleaned `DataFrame`.
-
-### Details
-
-Cleaning steps:
-- Replace the values `24L` and `24Low` with `24` in `CAN_A2`.
-- Keep only kidney transplant recipients (exclude multi-organ outcomes).
-- Remove recipients with missing dialysis date (`CAN_DIAL_DT`).
-- If listing date is missing, replace it by the dialysis date.
-- If listing date is after dialysis date, replace the listing date by the dialysis date.
-- Keeping only adult recipients (18 years old and older)
-- Convert `DateTime` columns to `Date`.
-"""
-function load_recipient(filepath::AbstractString)
-    df = CSV.read(filepath, DataFrame, missingstring=["-", "", "NULL"])
-
-    # # Manually removing duplicated rows for TX (TODO check in new dataset version if these errors are still present)
-    # if (df.OUTCOME[3104] == df.OUTCOME[3105]) & (df.UPDATE_TM[3104] == df.UPDATE_TM[3105])
-    #     deleteat!(df, 3104)
-    # end
-
-    # Replacing the value 24L and 24Low with 24 for instance
-    df.CAN_A2 = parse_hla_int.(df.CAN_A2)
-
-    fill_hla_pairs!(df, "CAN")
-
-    # Harmonize columns when some rows have missig value for a same recipient
-    col_to_harmonize = [:CAN_BTH_DT, :CAN_BLOOD, :CAN_DIAL_DT]
-    for col in col_to_harmonize
-        harmonize_col!(df, col=col, idcol=:CAN_ID )
-    end
-
-    # Keeping only the recipients for kidney transplant
-    filter!(row -> uppercase(row.OUTCOME) ∈ ("TX", "1", "0", "X", "DCD", "TX VIVANT"), df)
-
-    # Removing the recipient where the dialysis time is missing. It happens for recipients that received a kidney from a living donor.
-    dropmissing!(df, [:CAN_DIAL_DT])
-
-    # If listing time is missing, replacing it by the dialysis time.
-    coalesce_listing!(df)
-
-    # Keeping only adult recipients
-    filter!(row -> years_between(row.CAN_BTH_DT, row.CAN_LISTING_DT) > 17, df)
-
-    # Keeping only the first outcome for each recipient. Some recipients are registered more than once and key information are lost for the additional registration
-    filtered_df = similar(df, 0)
-    for g in groupby(df, :CAN_ID)
-        append!(filtered_df, filter_outcomes(g))
-    end
-    
-    # Keeping only the first outcome after the registered dialysis date for each recipient. Some recipients are registered more than once and key information are lost for the additional registration
-    filtered_df = similar(df, 0)
-    for g in groupby(df, :CAN_ID)
-        append!(filtered_df, filter_dialysis_episode(g))
-    end
-
-    # # If listing time is missing, replacing it by the dialysis time. If listing is before dialysis, set listing = dialysis
-    # enforce_listing_after_dialysis!(df)
-
-    # Transform DateTime in Date
-    # df.CAN_LISTING_DT = Date.(df.CAN_LISTING_DT)
-    # df.CAN_DIAL_DT = Date.(df.CAN_DIAL_DT)
-    # df.UPDATE_TM = passmissing(Date).(df.UPDATE_TM)
-
-    return filtered_df
-end
-
-"""
-    recipient_from_row(
-        r::DataFrameRow,
-        cpra::Integer=0;
-        expiration_date=nothing,
-        active_waiting_proportion=1.0,
-    ) -> Recipient
-
-Construct a `Recipient` from one row of a recipient's history. Required values
-in `r` are assumed non-missing.
-"""
-function recipient_from_row(
-    r::DataFrameRow,
-    cpra::Integer=0;
-    expiration_date::Union{Date,DateTime,Nothing}=nothing,
-    active_waiting_proportion::Real=1.0,
-)
-    birth = r.CAN_BTH_DT
-    dialysis = r.CAN_DIAL_DT
-    arrival = r.CAN_LISTING_DT
-
-    blood = parse_abo(String(r.CAN_BLOOD))
-
-    return Recipient(
-        birth, dialysis, arrival, blood,
-        r.CAN_A1, r.CAN_A2,
-        r.CAN_B1, r.CAN_B2,
-        r.CAN_DR1, r.CAN_DR2,
-        cpra;
-        expiration_date=expiration_date,
-        active_waiting_proportion=active_waiting_proportion,
-    )
-end
-
-"""
-    build_last_cpra_registry(cpra_filepath::String) -> Dict{CAN_ID, Int64}
-
-Build a dictionary mapping each recipient (`CAN_ID`) to their most recent calculated Panel Reactive Antibody (cPRA) value.
-
-### Details
-- The CPRA file is read from `cpra_filepath`.
-- Rows with missing `CAN_ID` or `CAN_CPRA` are discarded.
-- If a patient has many CPRA values, the most recent is retained (by update time according to UPDATE_TM)
-- CPRA values are rounded to the nearest integer and returned as `Int64`.
-
-### Returns
-A dictionary mapping `CAN_ID` to the most recent CPRA value.
-"""
-function build_last_cpra_registry(cpra_filepath::String)
-
-    df_cpra = CSV.read(cpra_filepath, DataFrame; missingstring=["-", "", "NULL"])
-
-    ("CAN_ID" in names(df_cpra)) || throw(ArgumentError("Missing column :CAN_ID in CPRA file"))
-    ("UPDATE_TM" in names(df_cpra)) || throw(ArgumentError("Missing column :UPDATE_TM in CPRA file"))
-    ("CAN_CPRA" in names(df_cpra)) || throw(ArgumentError("Missing column :CAN_CPRA in CPRA file"))
-
-    # Drop rows missing the essentials
-    dropmissing!(df_cpra, [:CAN_ID, :CAN_CPRA, :UPDATE_TM])
-
-    cpra_by_CAN_ID = Dict{eltype(df_cpra.CAN_ID),Int64}()
-
-    for g in groupby(df_cpra, :CAN_ID)
-        sort!(g, :UPDATE_TM, rev=true)  # most recent first
-        cpra_by_CAN_ID[g.CAN_ID[1]] = Int64(round(g.CAN_CPRA[1]))
-    end
-
-    return cpra_by_CAN_ID
+    return donor_registry, given_kidneys
 end
 
 
@@ -663,172 +558,643 @@ Build a dictionary of `Recipient` objects keyed by `CAN_ID`.
   `expiration_date=...` when constructing the `Recipient`.
 - Rows with missing required fields are discarded.
 """
-function build_recipient_registry(recipient_filepath::String, cpra_filepath::String)::Dict{Int,Recipient}
-    df = load_recipient(recipient_filepath)
+function build_recipient_registry(df_recipients::AbstractDataFrame)
 
     required = Symbol[
         :CAN_ID, :UPDATE_TM, :OUTCOME,
         :CAN_BTH_DT, :CAN_DIAL_DT, :CAN_LISTING_DT,
         :CAN_BLOOD, :CAN_A1, :CAN_A2, :CAN_B1, :CAN_B2, :CAN_DR1, :CAN_DR2
     ]
-    dropmissing!(df, required)
+    
+    df = dropmissing(df_recipients, required)
 
-    cpra_by_can_id = build_last_cpra_registry(cpra_filepath)
-    recipient_by_can_id = Dict{Int,Recipient}()
+    recipient_registry = Dict{Int,Recipient}()
+    time_to_first_offer_registry = Dict{Int,Union{Int, Missing}}()
+    time_to_transplant_registry = Dict{Int,Union{Int, Missing}}()
 
-    for g in groupby(df, :CAN_ID)
-
-        filtered_df = filter_outcomes(g)
-
-        # exp_date = infer_recipient_expiration_date(filtered_df)
-        exp_date = get_expiration_date(filtered_df)
-        active_waiting_proportion = recipient_active_waiting_proportion(filtered_df)
-
-        r = first(filtered_df)
-        can_id = r.CAN_ID
-
-        cpra = get(cpra_by_can_id, can_id, 0)
-        recipient_by_can_id[can_id] = recipient_from_row(r, cpra; expiration_date = exp_date, active_waiting_proportion = active_waiting_proportion)
+    for r in eachrow(df)
+        recipient_registry[r.CAN_ID] = recipient_from_row(r)
+        time_to_first_offer_registry[r.CAN_ID] = r.time_to_first_offer
+        time_to_transplant_registry[r.CAN_ID] = r.time_to_transplant
     end
 
-    return recipient_by_can_id
-end
-
-"""
-    coalesce_listing!(df::AbstractDataFrame) -> AbstractDataFrame
-
-Replace each missing value in `:CAN_LISTING_DT` with the corresponding value
-in `:CAN_DIAL_DT`, modifying `df` in place.
-
-`df` must contain `:CAN_LISTING_DT` and `:CAN_DIAL_DT`. Values in
-`:CAN_DIAL_DT` must be non-missing.
-"""
-function coalesce_listing!(df::AbstractDataFrame)
-    for col in (:CAN_LISTING_DT, :CAN_DIAL_DT)
-        col ∈ propertynames(df) ||
-            throw(ArgumentError("Missing column :$col"))
-    end
-
-    any(ismissing, df[!, :CAN_DIAL_DT]) &&
-        throw(ArgumentError("Column :CAN_DIAL_DT contains missing values"))
-
-    for row in eachrow(df)
-        if ismissing(row.CAN_LISTING_DT)
-            row.CAN_LISTING_DT = row.CAN_DIAL_DT
-        end
-    end
-
-    return df
+    return recipient_registry, time_to_first_offer_registry, time_to_transplant_registry
 end
 
 
-"""
-    harmonize_col!(df; col, idcol=:CAN_ID) -> DataFrame
-
-Ensure that `col` has at most one non-missing value per `idcol` group and
-fill missing entries with that value. Throws an error if multiple distinct
-non-missing values are found within a group.
-"""
-function harmonize_col!(df::DataFrame; col::Symbol, idcol::Symbol=:CAN_ID)
-
-    val_by_id = Dict{Int,Union{Missing,eltype(skipmissing(df[!, col]))}}()
-
-    for g in groupby(df, idcol)
-        id = g[1, idcol]
-        vals = unique(skipmissing(g[!, col]))
-        if length(vals) == 0
-            val_by_id[id] = missing
-        elseif length(vals) == 1
-            val_by_id[id] = first(vals)
-        else
-            throw(ArgumentError("Multiple $(col) values for $(idcol)=$id: $(collect(vals))"))
-        end
-    end
-
-    df[!, col] = coalesce.(df[!, col], getindex.(Ref(val_by_id), df[!, idcol]))
-    return df
-end
-
-"""
-    retrieve_observed_waiting_list(recipient_filepath, date) -> Vector{Int64}
-
-Return the IDs of recipients registered on the waiting list at `date`, based
-on the recipient history stored in `recipient_filepath`.
-"""
-function retrieve_observed_waiting_list(recipient_filepath::String, date::DateTime)::Vector{Int64}
-
-    df = load_recipient(recipient_filepath)
-    registered_ids = Int64[]
-
-    for group in groupby(df, :CAN_ID)
-        filtered_group = filter_outcomes(group)
-
-        arrival_time = DateTime(first(filtered_group.CAN_LISTING_DT))
-        exit_time = get_exit_date(filtered_group)
-
-        if arrival_time ≤ date &&
-           (isnothing(exit_time) || date ≤ exit_time)
-            push!(registered_ids, first(filtered_group.CAN_ID))
-        end
-    end
-
-    return registered_ids
-end
-
-retrieve_observed_waiting_list(recipient_filepath::String, date::Date) = retrieve_observed_waiting_list(recipient_filepath, DateTime(date))
-
-"""
-    count_recipient_arrivals(df, start_time, end_time) -> Int
-
-Return the number of distinct recipients whose listing date lies in
-`[start_time, end_time)`.
-"""
-function count_recipient_arrivals(df::AbstractDataFrame, start_time::DateTime, end_time::DateTime)::Int
-
-    check_df_columns(df, :CAN_ID, :CAN_LISTING_DT)
-
-    start_time ≤ end_time || throw(ArgumentError("`start_time` must not be after `end_time`"))
-
-    n_recipients = 0
-
-    for recipient_df in groupby(df, :CAN_ID)
-        listing_time = DateTime(first(recipient_df.CAN_LISTING_DT))
-
-        if start_time ≤ listing_time < end_time
-            n_recipients += 1
-        end
-    end
-
-    return n_recipients
-end
 
 
-"""
-    count_donor_arrivals(df, start_time, end_time) -> Int
 
-Return the number of distinct donors whose death time lies in
-`[start_time, end_time)`.
-"""
-function count_donor_arrivals(
-    df::AbstractDataFrame,
-    start_time::DateTime,
-    end_time::DateTime,
-)::Int
 
-    check_df_columns(df, :DON_ID, :DON_DEATH_TM)
 
-    start_time ≤ end_time ||
-        throw(ArgumentError("`start_time` must not be after `end_time`"))
 
-    n_donors = 0
 
-    for donor_df in groupby(df, :DON_ID)
-        donor_arrival_time = DateTime(first(donor_df.DON_DEATH_TM))
 
-        if start_time ≤ donor_arrival_time < end_time
-            n_donors += 1
-        end
-    end
 
-    return n_donors
-end
+
+
+# """
+#     get_last_update(df::AbstractDataFrame) -> Tuple{DateTime, String}
+
+# Return the time and outcome of the most recent update retained by
+# `filter_outcomes` for a single recipient. 
+# """
+# function get_last_update(df::AbstractDataFrame)::Tuple{DateTime, String}
+
+#     isempty(df) && throw(ArgumentError("DataFrame is empty"))
+
+#     check_df_columns(df, :OUTCOME, :UPDATE_TM)
+#     check_df_column_constant(df, :CAN_ID)
+
+#     filtered_df = filter_outcomes(df)
+#     last_index = argmax(filtered_df.UPDATE_TM)
+
+#     return (filtered_df.UPDATE_TM[last_index], String(filtered_df.OUTCOME[last_index]))
+# end
+
+# """
+#     get_expiration_date(df::AbstractDataFrame) -> Union{DateTime,Nothing}
+
+# Return the time of the latest retained update if its outcome indicates a
+# permanent exit from the waiting list; otherwise return `nothing`.
+# """
+# function get_expiration_date(df::AbstractDataFrame)::Union{DateTime,Nothing}
+#     expiration_outcomes = ("X", "TX VIVANT", "DCD")
+
+#     date, outcome = get_last_update(df)
+
+#     return uppercase(strip(outcome)) ∈ expiration_outcomes ? date : nothing
+# end
+
+# """
+#     get_exit_date(df::AbstractDataFrame) -> Union{DateTime,Nothing}
+
+# Return the time of the first recorded exit from the waiting list for a single
+# recipient, or `nothing` if no exit outcome is recorded.
+# """
+# function get_exit_date(df::AbstractDataFrame)::Union{DateTime,Nothing}
+#     exit_outcomes = ("TX", "TX VIVANT", "X", "DCD")
+
+#     date, outcome = get_last_update(df)
+
+#     return uppercase(strip(outcome)) ∈ exit_outcomes ? date : nothing
+# end
+
+# """
+#     first_exit_date(df::AbstractDataFrame) -> Union{DateTime,Nothing}
+
+# Return the earliest update time associated with an exit outcome for a single
+# recipient, or `nothing` if no exit outcome is recorded.
+# """
+# function first_exit_date(df::AbstractDataFrame)::Union{DateTime,Nothing}
+#     isempty(df) && return nothing
+
+#     check_df_column_constant(df, :CAN_ID)
+#     check_df_columns(df, :OUTCOME, :UPDATE_TM)
+
+#     exit_outcomes = ("X", "TX VIVANT", "DCD", "TX")
+#     earliest_exit_time = nothing
+
+#     for row in eachrow(df)
+#         outcome = uppercase(strip(string(row.OUTCOME)))
+
+#         if outcome ∈ exit_outcomes
+#             update_time = DateTime(row.UPDATE_TM)
+
+#             earliest_exit_time = isnothing(earliest_exit_time) ?
+#                 update_time :
+#                 min(earliest_exit_time, update_time)
+#         end
+#     end
+
+#     return earliest_exit_time
+# end
+
+# """
+#     filter_outcomes(df::AbstractDataFrame) -> DataFrame
+
+# Return records from the first waiting-list episode of a single recipient.
+
+# Rows after the first exit outcome are removed, while the exit record is
+# retained. Exact duplicate retained rows are removed.
+# (Happen for recipients 501, 827 and 2051)
+
+# If every retained `UPDATE_TM` precedes the recorded `CAN_LISTING_DT`,
+# `CAN_LISTING_DT` is replaced by `CAN_DIAL_DT` as a proxy for the unavailable
+# original listing date.
+
+# `:UPDATE_TM` must contain `DateTime` values so that outcomes occurring on the
+# same calendar date can be ordered correctly.
+# """
+# function filter_outcomes(df::AbstractDataFrame)::DataFrame
+#     isempty(df) && return DataFrame(df)
+
+#     check_df_column_constant(df, :CAN_ID, :CAN_LISTING_DT, :CAN_DIAL_DT)
+#     check_df_columns(df, :OUTCOME, :UPDATE_TM)
+
+#     update_type = eltype(skipmissing(df[!, :UPDATE_TM]))
+
+#     update_type <: DateTime || throw(ArgumentError("Column :UPDATE_TM must contain DateTime values; got $update_type"))
+
+#     exit_time = first_exit_date(df)
+
+#     if exit_time === nothing
+#         filtered_df = DataFrame(df)
+#     else
+#         filtered_df = filter(:UPDATE_TM => date -> date ≤ exit_time, df)
+
+#         listing_date = first(filtered_df.CAN_LISTING_DT)
+#         dialysis_date = convert(typeof(listing_date), first(filtered_df.CAN_DIAL_DT))
+
+#         if maximum(filtered_df.UPDATE_TM) < listing_date
+#             filtered_df.CAN_LISTING_DT .= dialysis_date
+#         end
+
+#     end
+
+#     # Removing duplicated rows (happens for recipient 501, 827 and 2051)
+#     unique!(filtered_df)
+
+#     return filtered_df
+# end
+
+
+# """
+#     first_exit_after_dialysis(df) -> Union{DateTime,Nothing}
+
+# Return the first exit time on or after the recorded dialysis time for a
+# single recipient, or `nothing` if no such exit exists.
+# """
+# function first_exit_after_dialysis(
+#     df::AbstractDataFrame,
+# )::Union{DateTime,Nothing}
+
+#     check_df_columns(df, :CAN_ID, :CAN_DIAL_DT, :OUTCOME, :UPDATE_TM)
+#     check_df_column_constant(df, :CAN_ID, :CAN_DIAL_DT)
+
+#     isempty(df) && return nothing
+
+#     dialysis_time = DateTime(first(df.CAN_DIAL_DT))
+#     exit_outcomes = ("X", "TX VIVANT", "DCD", "TX")
+#     exit_time = nothing
+
+#     for row in eachrow(df)
+#         update_time = DateTime(row.UPDATE_TM)
+#         outcome = uppercase(strip(string(row.OUTCOME)))
+
+#         update_time ≥ dialysis_time && outcome ∈ exit_outcomes || continue
+
+#         exit_time = isnothing(exit_time) ? update_time : min(exit_time, update_time)
+#     end
+
+#     return exit_time
+# end
+
+
+
+
+
+
+
+# """
+#     load_donor(filepath::String) -> DataFrame
+
+# Load a CSV file containing donor information and return a cleaned `DataFrame`.
+
+# ### Details
+# Cleaning steps:
+# - Remove donors for which the decision status (`DECISION`) is missing.
+# - Keep only donors attributed to List 5 (Administrative to Transplant Québec).
+# - Keep only recipients who would have been offered a kidney using `filter_offers_until_last_acceptance`,
+# - Drop administrative columns not required for downstream processing.
+# - Replace `WEIGHT = 0`` and `HEIGHT = 0` by `missing`.
+# """
+# function load_donor(filepath::String)
+#     df_donors = CSV.read(filepath, DataFrame; missingstring=["-", "", "NULL"])
+
+#     dropmissing!(df_donors, [:DECISION])
+
+#     # Only attribution type 5
+#     filter!(row -> row.ATT_TYPE == 5, df_donors)
+
+#     df = filter_offers_until_last_acceptance(df_donors)
+
+#     fill_hla_pairs!(df, "DON")
+
+#     col_to_harmonize = [:DON_AGE, :DON_BLOOD, :DON_DEATH_TM, :WEIGHT, :HEIGHT, :ETHNICITY, :HYPERTENSION, :DIABETES, :DEATH, :CREATININE, :HCV, :DCD]
+
+#     for col in col_to_harmonize
+#         harmonize_col!(df, col=col, idcol=:DON_ID)
+#     end
+
+#     cols_to_drop = [:DON_LAB_DT_TM, :ATT_TYPE]
+#     select!(df, Not(cols_to_drop))
+
+#     allowmissing!(df, [:WEIGHT, :HEIGHT])
+#     df.WEIGHT[df.WEIGHT.≈0.] .= missing
+#     df.HEIGHT[df.HEIGHT.≈0.] .= missing
+
+#     return df
+# end
+
+# """
+#     donor_from_row(r::DataFrameRow) -> Donor
+
+# Construct a `Donor` from a donor `DataFrameRow`. Assume non-missing value.
+# """
+# function donor_from_row(r::DataFrameRow)
+
+#     age = r.DON_AGE
+#     height = r.HEIGHT
+#     weight = r.WEIGHT
+#     hypertension = r.HYPERTENSION == 1
+#     diabetes = r.DIABETES == 1
+#     cva = r.DEATH ∈ (4, 16)
+#     creatinine = creatinine_mgdl(r.CREATININE)
+#     dcd = r.DCD == 1
+
+#     kdri = evaluate_kdri(age, height, weight, hypertension, diabetes, cva, creatinine, dcd)
+
+#     arrival = Date(r.DON_DEATH_TM)
+#     blood = parse_abo(r.DON_BLOOD)
+
+#     donor = Donor(arrival, age, blood, r.DON_A1, r.DON_A2, r.DON_B1, r.DON_B2, r.DON_DR1, r.DON_DR2, kdri)
+
+#     return donor
+# end
+
+
+# """
+#     build_donor_registry(filepath::String) -> Dict{Int,Donor}
+
+# Build a dictionary of `Donor` objects keyed by `DON_ID` from a donor CSV file.
+
+# Rows with missing values required to construct a donor and compute KDRI are
+# discarded. For each `DON_ID`, one `Donor` is constructed from the corresponding
+# row using `donor_from_row`.
+
+# ### Notes
+# - The donor arrival date is derived from the donor death date (`DON_DEATH_TM`).
+# - Rows with incomplete data required for KDRI computation are discarded.
+# """
+# function build_donor_registry(filepath::String)::Dict{Int,Donor}
+#     df = load_donor(filepath)
+
+#     kdri_required = Symbol[
+#         :DON_ID, :DON_AGE, :HEIGHT, :WEIGHT, :HYPERTENSION, :DIABETES, :DEATH, :CREATININE, :DCD
+#     ]
+#     donor_required = Symbol[
+#         :DON_DEATH_TM, :DON_AGE, :DON_BLOOD, :DON_A1, :DON_A2, :DON_B1, :DON_B2, :DON_DR1, :DON_DR2
+#     ]
+
+#     dropmissing!(df, kdri_required)
+#     dropmissing!(df, donor_required)
+
+#     donor_by_don_id = Dict{Int,Donor}()
+
+#     for g in groupby(df, :DON_ID)
+#         r = first(g)
+#         don_id = r.DON_ID
+#         donor_by_don_id[don_id] = donor_from_row(r)
+#     end
+
+#     return donor_by_don_id
+# end
+
+# """
+#     kidneys_given_by_donor(df_donors) -> Dict{Int,Int}
+
+# Return the number of given kidneys for each `DON_ID`.
+# """
+# function kidneys_given_by_donor(df_donors::AbstractDataFrame)
+#     @assert "DON_ID" in names(df_donors) "Missing column :DON_ID"
+#     @assert "STATUS" in names(df_donors) "Missing column :STATUS"
+
+#     kidney_by_don_id = Dict{Int,Int}()
+
+#     for g in groupby(df_donors, :DON_ID)
+#        kidney_by_don_id[g.DON_ID[1]] = count(==("TX"), skipmissing(g.STATUS))
+#     end
+
+#     return kidney_by_don_id
+
+# end
+
+
+# """
+#     load_recipient(filepath::AbstractString)
+
+# Load the CSV file containing recipient information and return a cleaned `DataFrame`.
+
+# ### Details
+
+# Cleaning steps:
+# - Replace the values `24L` and `24Low` with `24` in `CAN_A2`.
+# - Keep only kidney transplant recipients (exclude multi-organ outcomes).
+# - Remove recipients with missing dialysis date (`CAN_DIAL_DT`).
+# - If listing date is missing, replace it by the dialysis date.
+# - If listing date is after dialysis date, replace the listing date by the dialysis date.
+# - Keeping only adult recipients (18 years old and older)
+# - Convert `DateTime` columns to `Date`.
+# """
+# function load_recipient(filepath::AbstractString)
+#     df = CSV.read(filepath, DataFrame, missingstring=["-", "", "NULL"])
+
+#     # # Manually removing duplicated rows for TX (TODO check in new dataset version if these errors are still present)
+#     # if (df.OUTCOME[3104] == df.OUTCOME[3105]) & (df.UPDATE_TM[3104] == df.UPDATE_TM[3105])
+#     #     deleteat!(df, 3104)
+#     # end
+
+#     # Replacing the value 24L and 24Low with 24 for instance
+#     df.CAN_A2 = parse_hla_int.(df.CAN_A2)
+
+#     fill_hla_pairs!(df, "CAN")
+
+#     # Harmonize columns when some rows have missig value for a same recipient
+#     col_to_harmonize = [:CAN_BTH_DT, :CAN_BLOOD, :CAN_DIAL_DT]
+#     for col in col_to_harmonize
+#         harmonize_col!(df, col=col, idcol=:CAN_ID )
+#     end
+
+#     # Keeping only the recipients for kidney transplant
+#     filter!(row -> uppercase(row.OUTCOME) ∈ ("TX", "1", "0", "X", "DCD", "TX VIVANT"), df)
+
+#     # Removing the recipient where the dialysis time is missing. It happens for recipients that received a kidney from a living donor.
+#     dropmissing!(df, [:CAN_DIAL_DT])
+
+#     # If listing time is missing, replacing it by the dialysis time.
+#     coalesce_listing!(df)
+
+#     # Keeping only adult recipients
+#     filter!(row -> years_between(row.CAN_BTH_DT, row.CAN_LISTING_DT) > 17, df)
+
+#     # Keeping only the first outcome for each recipient. Some recipients are registered more than once and key information are lost for the additional registration
+#     filtered_df = similar(df, 0)
+#     for g in groupby(df, :CAN_ID)
+#         append!(filtered_df, filter_outcomes(g))
+#     end
+    
+#     # Keeping only the first outcome after the registered dialysis date for each recipient. Some recipients are registered more than once and key information are lost for the additional registration
+#     filtered_df = similar(df, 0)
+#     for g in groupby(df, :CAN_ID)
+#         append!(filtered_df, filter_dialysis_episode(g))
+#     end
+
+#     # # If listing time is missing, replacing it by the dialysis time. If listing is before dialysis, set listing = dialysis
+#     # enforce_listing_after_dialysis!(df)
+
+#     # Transform DateTime in Date
+#     # df.CAN_LISTING_DT = Date.(df.CAN_LISTING_DT)
+#     # df.CAN_DIAL_DT = Date.(df.CAN_DIAL_DT)
+#     # df.UPDATE_TM = passmissing(Date).(df.UPDATE_TM)
+
+#     return filtered_df
+# end
+
+# """
+#     recipient_from_row(
+#         r::DataFrameRow,
+#         cpra::Integer=0;
+#         expiration_date=nothing,
+#         active_waiting_proportion=1.0,
+#     ) -> Recipient
+
+# Construct a `Recipient` from one row of a recipient's history. Required values
+# in `r` are assumed non-missing.
+# """
+# function recipient_from_row(
+#     r::DataFrameRow,
+#     cpra::Integer=0;
+#     expiration_date::Union{Date,DateTime,Nothing}=nothing,
+#     active_waiting_proportion::Real=1.0,
+# )
+#     birth = r.CAN_BTH_DT
+#     dialysis = r.CAN_DIAL_DT
+#     arrival = r.CAN_LISTING_DT
+
+#     blood = parse_abo(String(r.CAN_BLOOD))
+
+#     return Recipient(
+#         birth, dialysis, arrival, blood,
+#         r.CAN_A1, r.CAN_A2,
+#         r.CAN_B1, r.CAN_B2,
+#         r.CAN_DR1, r.CAN_DR2,
+#         cpra;
+#         expiration_date=expiration_date,
+#         active_waiting_proportion=active_waiting_proportion,
+#     )
+# end
+
+# """
+#     build_last_cpra_registry(cpra_filepath::String) -> Dict{CAN_ID, Int64}
+
+# Build a dictionary mapping each recipient (`CAN_ID`) to their most recent calculated Panel Reactive Antibody (cPRA) value.
+
+# ### Details
+# - The CPRA file is read from `cpra_filepath`.
+# - Rows with missing `CAN_ID` or `CAN_CPRA` are discarded.
+# - If a patient has many CPRA values, the most recent is retained (by update time according to UPDATE_TM)
+# - CPRA values are rounded to the nearest integer and returned as `Int64`.
+
+# ### Returns
+# A dictionary mapping `CAN_ID` to the most recent CPRA value.
+# """
+# function build_last_cpra_registry(cpra_filepath::String)
+
+#     df_cpra = CSV.read(cpra_filepath, DataFrame; missingstring=["-", "", "NULL"])
+
+#     ("CAN_ID" in names(df_cpra)) || throw(ArgumentError("Missing column :CAN_ID in CPRA file"))
+#     ("UPDATE_TM" in names(df_cpra)) || throw(ArgumentError("Missing column :UPDATE_TM in CPRA file"))
+#     ("CAN_CPRA" in names(df_cpra)) || throw(ArgumentError("Missing column :CAN_CPRA in CPRA file"))
+
+#     # Drop rows missing the essentials
+#     dropmissing!(df_cpra, [:CAN_ID, :CAN_CPRA, :UPDATE_TM])
+
+#     cpra_by_CAN_ID = Dict{eltype(df_cpra.CAN_ID),Int64}()
+
+#     for g in groupby(df_cpra, :CAN_ID)
+#         sort!(g, :UPDATE_TM, rev=true)  # most recent first
+#         cpra_by_CAN_ID[g.CAN_ID[1]] = Int64(round(g.CAN_CPRA[1]))
+#     end
+
+#     return cpra_by_CAN_ID
+# end
+
+
+# """
+#     build_recipient_registry(recipient_filepath, cpra_filepath) -> Dict{Int,Recipient}
+
+# Build a dictionary of `Recipient` objects keyed by `CAN_ID`.
+
+# ### Arguments
+# - `recipient_filepath::String`: Path to the recipient CSV file (loaded by `load_recipient`).
+# - `cpra_filepath::String`: Path to the CPRA CSV file used to compute the latest CPRA per `CAN_ID`.
+
+# ### Notes
+# - The expiration date is inferred from the status history and passed as
+#   `expiration_date=...` when constructing the `Recipient`.
+# - Rows with missing required fields are discarded.
+# """
+# function build_recipient_registry(recipient_filepath::String, cpra_filepath::String)::Dict{Int,Recipient}
+#     df = load_recipient(recipient_filepath)
+
+#     required = Symbol[
+#         :CAN_ID, :UPDATE_TM, :OUTCOME,
+#         :CAN_BTH_DT, :CAN_DIAL_DT, :CAN_LISTING_DT,
+#         :CAN_BLOOD, :CAN_A1, :CAN_A2, :CAN_B1, :CAN_B2, :CAN_DR1, :CAN_DR2
+#     ]
+#     dropmissing!(df, required)
+
+#     cpra_by_can_id = build_last_cpra_registry(cpra_filepath)
+#     recipient_by_can_id = Dict{Int,Recipient}()
+
+#     for g in groupby(df, :CAN_ID)
+
+#         filtered_df = filter_outcomes(g)
+
+#         # exp_date = infer_recipient_expiration_date(filtered_df)
+#         exp_date = get_expiration_date(filtered_df)
+#         active_waiting_proportion = recipient_active_waiting_proportion(filtered_df)
+
+#         r = first(filtered_df)
+#         can_id = r.CAN_ID
+
+#         cpra = get(cpra_by_can_id, can_id, 0)
+#         recipient_by_can_id[can_id] = recipient_from_row(r, cpra; expiration_date = exp_date, active_waiting_proportion = active_waiting_proportion)
+#     end
+
+#     return recipient_by_can_id
+# end
+
+
+
+
+
+
+# """
+#     retrieve_observed_waiting_list(recipient_filepath, date) -> Vector{Int64}
+
+# Return the IDs of recipients registered on the waiting list at `date`, based
+# on the recipient history stored in `recipient_filepath`.
+# """
+# function retrieve_observed_waiting_list(recipient_filepath::String, date::DateTime)::Vector{Int64}
+
+#     df = load_recipient(recipient_filepath)
+#     registered_ids = Int64[]
+
+#     for group in groupby(df, :CAN_ID)
+#         filtered_group = filter_outcomes(group)
+
+#         arrival_time = DateTime(first(filtered_group.CAN_LISTING_DT))
+#         exit_time = get_exit_date(filtered_group)
+
+#         if arrival_time ≤ date &&
+#            (isnothing(exit_time) || date ≤ exit_time)
+#             push!(registered_ids, first(filtered_group.CAN_ID))
+#         end
+#     end
+
+#     return registered_ids
+# end
+
+# retrieve_observed_waiting_list(recipient_filepath::String, date::Date) = retrieve_observed_waiting_list(recipient_filepath, DateTime(date))
+
+# """
+#     count_recipient_arrivals(df, start_time, end_time) -> Int
+
+# Return the number of distinct recipients whose listing date lies in
+# `[start_time, end_time)`.
+# """
+# function count_recipient_arrivals(df::AbstractDataFrame, start_time::DateTime, end_time::DateTime)::Int
+
+#     check_df_columns(df, :CAN_ID, :CAN_LISTING_DT)
+
+#     start_time ≤ end_time || throw(ArgumentError("`start_time` must not be after `end_time`"))
+
+#     n_recipients = 0
+
+#     for recipient_df in groupby(df, :CAN_ID)
+#         listing_time = DateTime(first(recipient_df.CAN_LISTING_DT))
+
+#         if start_time ≤ listing_time < end_time
+#             n_recipients += 1
+#         end
+#     end
+
+#     return n_recipients
+# end
+
+
+# """
+#     count_donor_arrivals(df, start_time, end_time) -> Int
+
+# Return the number of distinct donors whose death time lies in
+# `[start_time, end_time)`.
+# """
+# function count_donor_arrivals(
+#     df::AbstractDataFrame,
+#     start_time::DateTime,
+#     end_time::DateTime,
+# )::Int
+
+#     check_df_columns(df, :DON_ID, :DON_DEATH_TM)
+
+#     start_time ≤ end_time ||
+#         throw(ArgumentError("`start_time` must not be after `end_time`"))
+
+#     n_donors = 0
+
+#     for donor_df in groupby(df, :DON_ID)
+#         donor_arrival_time = DateTime(first(donor_df.DON_DEATH_TM))
+
+#         if start_time ≤ donor_arrival_time < end_time
+#             n_donors += 1
+#         end
+#     end
+
+#     return n_donors
+# end
+
+
+
+
+
+
+
+
+
+
+
+
+
+# """
+#     check_df_at_most_one_exit_outcome(df, outcomes=...) -> Nothing
+
+# Verify that a single recipient history contains at most one of the specified
+# exit outcomes. Outcome codes are matched case-insensitively.
+# """
+# function check_df_at_most_one_exit_outcome(
+#     df::AbstractDataFrame,
+#     outcomes::AbstractVector{<:AbstractString}=[
+#         "X", "TX VIVANT", "DCD", "TX",
+#     ],
+# )
+#     check_df_columns(df, :OUTCOME)
+#     check_df_column_constant(df, :CAN_ID)
+
+#     exit_outcomes = Set(
+#         uppercase(strip(string(outcome))) for outcome in outcomes
+#     )
+
+#     n_exit_outcomes = count(
+#         row -> uppercase(strip(string(row.OUTCOME))) ∈ exit_outcomes,
+#         eachrow(df),
+#     )
+
+#     n_exit_outcomes ≤ 1 ||
+#         throw(ArgumentError(
+#             "More than one exit outcome found for this recipient",
+#         ))
+
+#     return nothing
+# end
