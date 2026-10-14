@@ -77,6 +77,7 @@ TX_ids = Int64[]
 df_TX = filter(row-> row.OUTCOME == "TX", df_recipients)
 filter!(row->row.CAN_LISTING_DT ≥ Date(2016,1,1), df_TX)
 filter!(row->row.UPDATE_TM < Date(2020,1,1), df_TX)
+filter!(row->row.CPRA < 80, df_TX)
 
 TX_ids = df_TX.CAN_ID
 
