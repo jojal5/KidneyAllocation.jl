@@ -368,6 +368,7 @@ simulation, including simulations with no offers.
 function offers_to_dataframes(
     focal_recipient::Recipient,
     offers_by_simulation::Vector{Vector{Donor}},
+    dm::AbstractDecisionModel,
 )
     offers_df = DataFrame(
         simulation_id=Int[],
@@ -375,18 +376,22 @@ function offers_to_dataframes(
         donor_arrival=Date[],
         elapsed_days=Int[],
         kdri=Float64[],
+        acceptance_probability = Float64[],
     )
 
     for (simulation_id, offered_donors) in enumerate(offers_by_simulation)
         for (offer_number, donor) in enumerate(offered_donors)
             donor_date = Date(donor.arrival)
 
+            p = acceptance_probability(dm, focal_recipient, donor)
+
             push!(offers_df, (
                 simulation_id=simulation_id,
                 offer_number=offer_number,
                 donor_arrival=donor_date,
                 elapsed_days=Dates.value(donor_date - focal_recipient.arrival),
-                kdri=KidneyAllocation.get_kdri(donor), # or donor.kdri, depending on your API
+                kdri=KidneyAllocation.get_kdri(donor),
+                acceptance_probability = p,
             ))
         end
     end

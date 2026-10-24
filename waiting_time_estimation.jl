@@ -111,7 +111,7 @@ TX_ids = df_TX.CAN_ID
 ## Selection of a recipient and simulation
 
     nyears = 5
-    nsim = 1000
+    nsim = 5
 
 Threads.@threads for id in TX_ids
 
@@ -145,7 +145,7 @@ Threads.@threads for id in TX_ids
     # filename = string("/Users/jalbert/Dropbox/Files/Supervision/encours/AnastasiyaOlekBasanets/Simulations/",id,".jld2")
     # jldsave(filename; offers)
 
-    df = KidneyAllocation.offers_to_dataframes(recipient, offers)
+    df = KidneyAllocation.offers_to_dataframes(recipient, offers, dm)
     filename = string("/Users/jalbert/Dropbox/Files/Supervision/encours/AnastasiyaOlekBasanets/Simulations/",id,".csv")
     CSV.write(filename, df)
 

@@ -13,6 +13,136 @@ donor_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-rese
 
 df_recipients, df_donors = KidneyAllocation.load_data(recipient_filepath, cpra_filepath, donor_filepath)
 
+donor_registry, given_kidneys_registry = KidneyAllocation.build_donor_registry(df_donors) 
+recipient_registry, time_to_first_offer_registry, time_to_transplant_registry = KidneyAllocation.build_recipient_registry(df_recipients)
+
+## TX recipients 
+
+df_TX = filter(row-> row.OUTCOME == "TX", df_recipients)
+filter!(row->row.CAN_LISTING_DT ≥ Date(2016,1,1), df_TX)
+filter!(row->row.UPDATE_TM < Date(2020,1,1), df_TX)
+filter!(row->row.CPRA < 80, df_TX)
+
+TX_ids = df_TX.CAN_ID
+
+## Check recipient by recipient
+
+# id = 3748
+# id = 10615
+id = TX_ids[3]
+
+sim_folder = "/Users/jalbert/Dropbox/Files/Supervision/encours/AnastasiyaOlekBasanets/Simulations/"
+filepath = joinpath(sim_folder, "$id.csv")
+
+res = CSV.read(filepath, DataFrame)
+
+df = combine(groupby(res, :simulation_id), :elapsed_days => minimum => :elapsed_days)
+
+plot(df, y=:elapsed_days, Geom.boxplot)
+
+time_to_first_offer_registry[id]
+time_to_transplant_registry[id]
+
+
+filter(row -> row.CAN_ID == id, df_recipients)
+filter(row -> row.CAN_ID == id, df_donors)
+
+# Le score enregistré est de 10.23, on dirait qu'il y a erreur dans les entrées du fichier Candidate
+KidneyAllocation.score(donor_registry[5382], recipient_registry[1678])
+
+
+Date(2018,2,8) - Date(2016,7,21)
+
+## Check calibration for all recipients
+
+q1 = falses(length(TX_ids))
+q2 = falses(length(TX_ids))
+q3 = falses(length(TX_ids))
+
+for (i, id) in enumerate(TX_ids)
+
+    println(i)
+
+    # df_recipient = filter(row -> row.CAN_ID == id, df_recipients)
+    # df_donor = filter(row -> row.CAN_ID == id, df_donors)
+
+    # if isempty(df_recipient) || isempty(df_donor)
+    #     n_empty +=1
+    #     continue
+    # end
+
+    obs_waiting_time_before_first_offer = time_to_first_offer_registry[id]
+    # obs_waiting_time_before_first_offer = time_to_transplant_registry[id]
+
+    filepath = joinpath(sim_folder, "$id.csv")
+    res = CSV.read(filepath, DataFrame)
+
+    t1 = first_qualifying_offer_quantile_given_offer(res, .25)
+    t2 = first_qualifying_offer_quantile_given_offer(res, .5)
+    t3 = first_qualifying_offer_quantile_given_offer(res, .75)
+
+    q1[i] = !isnothing(t1) && obs_waiting_time_before_first_offer ≤ t1
+    q2[i] = !isnothing(t2) && obs_waiting_time_before_first_offer ≤ t2
+    q3[i] = !isnothing(t3) && obs_waiting_time_before_first_offer ≤ t3
+
+end
+
+p₁ = count(q1)/length(q1)
+p₂ = count(q2)/length(q2)
+p₃ = count(q3)/length(q3)
+
+
+## Time to transplant
+
+id = TX_ids[3]
+
+res = CSV.read(filepath, DataFrame)
+
+df = combine(groupby(res, :simulation_id), :elapsed_days => minimum => :elapsed_days)
+
+plot(df, y=:elapsed_days, Geom.boxplot)
+
+time_to_first_offer_registry[id]
+time_to_transplant_registry[id]
+
+
+
+## First transplant only
+
+df = CSV.read(recipient_filepath, DataFrame, missingstring=["", "-", "NULL"])
+exit_outcomes = ["TX", "TX VIVANT", "X", "DCD"]
+
+# df_first_transplant = similar(df, 0)
+
+first_transplant_ids = Int64[]
+
+for g in groupby(df, :CAN_ID)
+    n_outcome = 0
+    for r in eachrow(g)
+        if uppercase(strip(r.OUTCOME)) ∈ exit_outcomes
+            n_outcome += 1
+        end
+    end
+    if n_outcome ≤ 1
+        push!(first_transplant_ids, first(g.CAN_ID))
+    end
+end
+
+first_transplant_ids
+
+TX_ids_filtered = Int64[]
+
+for id in TX_ids
+    if id ∈ first_transplant_ids
+        push!(TX_ids_filtered, id)
+    end
+end
+
+TX_ids_filtered
+
+g = filter(row -> row.CAN_ID == 284, df)
+
+
 
 
 println("fin")
