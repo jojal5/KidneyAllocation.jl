@@ -1,5 +1,5 @@
 # In terminal, run the following command
-# julia --project=. --threads=12 waiting_time_estimation.jl
+# julia --project=. --threads=16 waiting_time_estimation.jl
 
 using Base.Threads
 
