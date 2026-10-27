@@ -107,11 +107,30 @@ filter!(row->row.CPRA < 80, df_TX)
 
 TX_ids = df_TX.CAN_ID
 
+## Retrieve untransplanted recipients for which waiting time has to be estimated
+
+# CPRA < 80
+# Registered between 2016 and 2020
+# Removed before 2020
+
+# TX_ids = Int64[]
+
+# removed_status = ["X", "TX VIVANT", "DCD"]
+
+# df_TX = filter(row-> uppercase(strip(row.OUTCOME)) ∈ removed_status, df_recipients)
+# filter!(row->row.CAN_LISTING_DT ≥ Date(2016,1,1), df_TX)
+# filter!(row->row.UPDATE_TM < Date(2020,1,1), df_TX)
+# filter!(row->row.CPRA < 80, df_TX)
+
+# filter!(row -> row.CAN_ID ∈ keys(recipient_registry), df_TX)
+
+# TX_ids = df_TX.CAN_ID
+
 
 ## Selection of a recipient and simulation
 
     nyears = 5
-    nsim = 5
+    nsim = 1000
 
 Threads.@threads for id in TX_ids
 

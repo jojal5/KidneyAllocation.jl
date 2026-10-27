@@ -1,7 +1,7 @@
 using Pkg
 Pkg.activate(".")
 
-using CSV, DataFrames, Dates, Random, Statistics, Test
+using CSV, DataFrames, Dates, JLD2, Random, Statistics, Test
 
 using Gadfly
 
@@ -25,18 +25,60 @@ filter!(row->row.CPRA < 80, df_TX)
 
 TX_ids = df_TX.CAN_ID
 
+
+## Verify if the computed score matches the recorded one. If not, it indicates wrong recipients entries in the original file data.
+
+
+score_matches = falses(length(TX_ids))
+
+for (i, id) in enumerate(TX_ids)
+
+    # id = TX_ids[1]
+
+    println(id)
+
+    df_CAN_DON = filter(row -> row.CAN_ID == id, df_donors)
+    filter!(row -> row.DECISION == "Acceptation", df_CAN_DON)
+
+    if isempty(df_CAN_DON)
+        continue
+    end
+    
+    don_id = first(df_CAN_DON.DON_ID)
+    recorded_score = first(df_CAN_DON.DON_CAN_SCORE)
+
+    # Vérification du score
+    computed_score = KidneyAllocation.score(donor_registry[don_id], recipient_registry[id])
+
+    if isapprox(recorded_score, computed_score, atol = .1)
+        score_matches[i] = true
+    end
+
+end
+
+count(score_matches)
+
+
+id = 3655
+df_CAN_DON = filter(row -> row.CAN_ID == id, df_donors)
+filter!(row -> row.DECISION == "Acceptation", df_CAN_DON)
+
+
+# Le candidat 3655 a été transplanté d'un rein de la liste 4.
+
 ## Check recipient by recipient
 
 # id = 3748
 # id = 10615
 id = TX_ids[3]
+id = TX_ids[1]
 
 sim_folder = "/Users/jalbert/Dropbox/Files/Supervision/encours/AnastasiyaOlekBasanets/Simulations/"
 filepath = joinpath(sim_folder, "$id.csv")
 
 res = CSV.read(filepath, DataFrame)
 
-df = combine(groupby(res, :simulation_id), :elapsed_days => minimum => :elapsed_days)
+df = combine(groupby(res, :simulation_id), :elapsed_days_since_dialysis => minimum => :elapsed_days)
 
 plot(df, y=:elapsed_days, Geom.boxplot)
 
@@ -45,15 +87,27 @@ time_to_transplant_registry[id]
 
 
 filter(row -> row.CAN_ID == id, df_recipients)
-filter(row -> row.CAN_ID == id, df_donors)
+df2 = filter(row -> row.CAN_ID == id, df_donors)
+filter!(row -> row.DECISION == "Acceptation", df2)
+
+don_id = first(df2.DON_ID)
+id
+
+# Vérification du score
+s = KidneyAllocation.score(donor_registry[don_id], recipient_registry[id])
+isapprox(first(df2.DON_CAN_SCORE), s; atol = .1) 
+
 
 # Le score enregistré est de 10.23, on dirait qu'il y a erreur dans les entrées du fichier Candidate
 KidneyAllocation.score(donor_registry[5382], recipient_registry[1678])
 
 
-Date(2018,2,8) - Date(2016,7,21)
 
-## Check calibration for all recipients
+
+
+
+
+## Check calibration for all recipients - First offer
 
 q1 = falses(length(TX_ids))
 q2 = falses(length(TX_ids))
@@ -92,13 +146,136 @@ p₂ = count(q2)/length(q2)
 p₃ = count(q3)/length(q3)
 
 
-## Time to transplant
+## Check calibration for all recipients - Time to transplant
+
+q1 = falses(length(TX_ids))
+q2 = falses(length(TX_ids))
+q3 = falses(length(TX_ids))
+
+for (i, id) in enumerate(TX_ids)
+
+    println(i)
+
+    # obs_waiting_time_before_first_offer = time_to_first_offer_registry[id]
+    obs_waiting_time_before_first_offer = time_to_transplant_registry[id]
+
+    filepath = joinpath(sim_folder, "$id.csv")
+    res = CSV.read(filepath, DataFrame)
+
+    ind_accepted = res.acceptance_probability .≥ rand(nrow(res))
+    accepted_offers = res[ind_accepted, :]
+
+    t1 = first_qualifying_offer_quantile_given_offer(accepted_offers, .25)
+    t2 = first_qualifying_offer_quantile_given_offer(accepted_offers, .5)
+    t3 = first_qualifying_offer_quantile_given_offer(accepted_offers, .75)
+
+    q1[i] = !isnothing(t1) && obs_waiting_time_before_first_offer ≤ t1
+    q2[i] = !isnothing(t2) && obs_waiting_time_before_first_offer ≤ t2
+    q3[i] = !isnothing(t3) && obs_waiting_time_before_first_offer ≤ t3
+
+end
+
+p₁ = count(q1)/length(q1)
+p₂ = count(q2)/length(q2)
+p₃ = count(q3)/length(q3)
+
+
+## Check calibration for all recipients - Time to first offer compared with observed time to transplant
+
+q1 = falses(length(TX_ids))
+q2 = falses(length(TX_ids))
+q3 = falses(length(TX_ids))
+
+for (i, id) in enumerate(TX_ids)
+
+    println(i)
+
+    # obs_waiting_time_before_first_offer = time_to_first_offer_registry[id]
+    obs_waiting_time_before_first_offer = time_to_transplant_registry[id]
+
+    filepath = joinpath(sim_folder, "$id.csv")
+    res = CSV.read(filepath, DataFrame)
+
+    # ind_accepted = res.acceptance_probability .≥ rand(nrow(res))
+    # accepted_offers = res[ind_accepted, :]
+
+    t1 = first_qualifying_offer_quantile_given_offer(res, .25)
+    t2 = first_qualifying_offer_quantile_given_offer(res, .5)
+    t3 = first_qualifying_offer_quantile_given_offer(res, .75)
+
+    q1[i] = !isnothing(t1) && obs_waiting_time_before_first_offer ≤ t1
+    q2[i] = !isnothing(t2) && obs_waiting_time_before_first_offer ≤ t2
+    q3[i] = !isnothing(t3) && obs_waiting_time_before_first_offer ≤ t3
+
+end
+
+p₁ = count(q1)/length(q1)
+p₂ = count(q2)/length(q2)
+p₃ = count(q3)/length(q3)
+
+
+σ = sqrt(p₂*(1. .-  p₂)/length(q2))
+p₂ + 1.96*σ
+
+σ = sqrt(p₃*(1. .-  p₃)/length(q3))
+p₃ + 1.96*σ
+
+
+## Check calibration for permanently removed patients
+
+TX_ids = Int64[]
+
+removed_status = ["X", "TX VIVANT", "DCD"]
+
+df_TX = filter(row-> uppercase(strip(row.OUTCOME)) ∈ removed_status, df_recipients)
+filter!(row->row.CAN_LISTING_DT ≥ Date(2016,1,1), df_TX)
+filter!(row->row.UPDATE_TM < Date(2020,1,1), df_TX)
+filter!(row->row.CPRA < 80, df_TX)
+
+filter!(row -> row.CAN_ID ∈ keys(recipient_registry), df_TX)
+
+TX_ids = df_TX.CAN_ID
 
 id = TX_ids[3]
+
+sim_folder = "/Users/jalbert/Dropbox/Files/Supervision/encours/AnastasiyaOlekBasanets/Simulations/"
+filepath = joinpath(sim_folder, "$id.csv")
 
 res = CSV.read(filepath, DataFrame)
 
 df = combine(groupby(res, :simulation_id), :elapsed_days => minimum => :elapsed_days)
+
+plot(df, y=:elapsed_days, Geom.boxplot)
+
+time_to_first_offer_registry[id]
+time_to_transplant_registry[id]
+
+
+filter(row -> row.CAN_ID == id, df_recipients)
+filter(row -> row.CAN_ID == id, df_donors)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Time to transplant
+
+filepath = joinpath(sim_folder, "$id.csv")
+res = CSV.read(filepath, DataFrame)
+
+ind_accepted = res.acceptance_probability .≥ rand(nrow(res))
+accepted_offers = res[ind_accepted, :]
+
+df = combine(groupby(accepted_offers, :simulation_id), :elapsed_days => minimum => :elapsed_days)
 
 plot(df, y=:elapsed_days, Geom.boxplot)
 

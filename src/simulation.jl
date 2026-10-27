@@ -374,7 +374,8 @@ function offers_to_dataframes(
         simulation_id=Int[],
         offer_number=Int[],
         donor_arrival=Date[],
-        elapsed_days=Int[],
+        elapsed_days_since_arrival=Int[],
+        elapsed_days_since_dialysis=Int[], 
         kdri=Float64[],
         acceptance_probability = Float64[],
     )
@@ -389,7 +390,8 @@ function offers_to_dataframes(
                 simulation_id=simulation_id,
                 offer_number=offer_number,
                 donor_arrival=donor_date,
-                elapsed_days=Dates.value(donor_date - focal_recipient.arrival),
+                elapsed_days_since_arrival = Dates.value(donor_date - focal_recipient.arrival),
+                elapsed_days_since_dialysis = Dates.value(donor_date - focal_recipient.dialysis),
                 kdri=KidneyAllocation.get_kdri(donor),
                 acceptance_probability = p,
             ))

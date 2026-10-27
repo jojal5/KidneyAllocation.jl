@@ -506,6 +506,7 @@ function load_data(recipient_filepath::AbstractString, cpra_filepath::AbstractSt
 
         CAN_ID = r.CAN_ID
         listing_date = r.CAN_LISTING_DT
+        dialysis_date = r.CAN_DIAL_DT
         exit_date = uppercase(strip(r.OUTCOME)) ∈ exit_status ? r.UPDATE_TM : nothing
 
 
@@ -521,7 +522,8 @@ function load_data(recipient_filepath::AbstractString, cpra_filepath::AbstractSt
 
 
         if uppercase(strip(r.OUTCOME)) == "TX"
-            time_to_transplant[i] = Dates.days(r.UPDATE_TM - r.CAN_LISTING_DT)
+            # time_to_transplant[i] = Dates.days(r.UPDATE_TM - r.CAN_LISTING_DT)
+            time_to_transplant[i] = Dates.days(r.UPDATE_TM - dialysis_date)
         else
             time_to_transplant[i] = missing
         end
@@ -539,7 +541,8 @@ function load_data(recipient_filepath::AbstractString, cpra_filepath::AbstractSt
         append!(filtered_df_donors, df_offers)
 
         if !isempty(df_offers)
-            time_to_first_offer[i] = Dates.days(minimum(df_offers.DON_DEATH_TM) - listing_date)
+            # time_to_first_offer[i] = Dates.days(minimum(df_offers.DON_DEATH_TM) - listing_date)
+            time_to_first_offer[i] = Dates.days(minimum(df_offers.DON_DEATH_TM) - dialysis_date)
         else
             time_to_first_offer[i] = missing
         end
