@@ -272,24 +272,26 @@ function load_recipient(filepath::AbstractString)
     # Keeping only the recipients for kidney transplant
     filter!(row -> uppercase(strip(row.OUTCOME)) ∈ ("TX", "1", "0", "X", "DCD", "TX VIVANT"), df)
 
-    # Removing the recipient where the dialysis time is missing. It happens for recipients that received a kidney from a living donor.
-    dropmissing!(df, [:CAN_DIAL_DT])
+    # # Removing the recipient where the dialysis time is missing. It happens for recipients that received a kidney from a living donor.
+    # dropmissing!(df, [:CAN_DIAL_DT])
 
     # If listing time is missing, replacing it by the dialysis time.
-    coalesce_listing!(df)
+    # coalesce_listing!(df)
 
     # Keeping only adult recipients
-    filter!(row -> years_between(row.CAN_BTH_DT, row.CAN_LISTING_DT) > 17, df)
+    # filter!(row -> years_between(row.CAN_BTH_DT, row.CAN_LISTING_DT) > 17, df)
 
     # Keeping only the first outcome after the registered dialysis date for each recipient. 
     # Some recipients are registered more than once and key information are lost for the additional registrations.
     # We keep the history corresponding to the recorded dialysis date.
-    filtered_df = similar(df, 0)
-    for g in groupby(df, :CAN_ID)
-        append!(filtered_df, filter_dialysis_episode(g))
-    end
+    # filtered_df = similar(df, 0)
+    # for g in groupby(df, :CAN_ID)
+    #     append!(filtered_df, filter_dialysis_episode(g))
+    # end
 
-    return filtered_df
+    # return filtered_df
+
+    return df
 end
 
 """
@@ -424,10 +426,10 @@ Cleaning steps:
 function load_donor(filepath::String)
     df_donors = CSV.read(filepath, DataFrame; missingstring=["-", "", "NULL"])
 
-    dropmissing!(df_donors, [:DECISION])
+    # dropmissing!(df_donors, [:DECISION])
 
     # Only attribution type 5
-    filter!(row -> row.ATT_TYPE == 5, df_donors)
+    # filter!(row -> row.ATT_TYPE == 5, df_donors)
 
     fill_hla_pairs!(df_donors, "DON")
 
@@ -437,20 +439,25 @@ function load_donor(filepath::String)
         harmonize_col!(df_donors, col=col, idcol=:DON_ID)
     end
 
-    cols_to_drop = [:DON_LAB_DT_TM, :ATT_TYPE]
+    # cols_to_drop = [:DON_LAB_DT_TM, :ATT_TYPE]
+    cols_to_drop = [:DON_LAB_DT_TM]
     select!(df_donors, Not(cols_to_drop))
 
     allowmissing!(df_donors, [:WEIGHT, :HEIGHT])
     df_donors.WEIGHT[df_donors.WEIGHT .≈ 0.] .= missing
     df_donors.HEIGHT[df_donors.HEIGHT .≈ 0.] .= missing
 
-    filtered_df = similar(df_donors, 0)
-    for g in groupby(df_donors, :DON_ID)
-        append!(filtered_df, filter_offers_until_last_acceptance(g))
-    end
+    # filtered_df = similar(df_donors, 0)
+    # for g in groupby(df_donors, :DON_ID)
+    #     append!(filtered_df, filter_offers_until_last_acceptance(g))
+    # end
 
-    return filtered_df
+    # return filtered_df
+
+    return df_donors
 end
+
+
 
 """
     donor_from_row(r::DataFrameRow) -> Donor
