@@ -169,8 +169,8 @@ function filter_dialysis_episode(df::AbstractDataFrame)::DataFrame
     isempty(episode_df) && return episode_df
 
     episode_end = isnothing(exit_time) ?
-        maximum(DateTime.(episode_df.UPDATE_TM)) :
-        exit_time
+                  maximum(DateTime.(episode_df.UPDATE_TM)) :
+                  exit_time
 
     listing_time = DateTime(listing_date)
 
@@ -231,6 +231,15 @@ function filter_first_waitlist_episode(df_recipient::AbstractDataFrame)::DataFra
     sorted_df = sort(df_recipient, :UPDATE_TM)
     exit_index = findfirst(is_exit, sorted_df.OUTCOME)
     last_index = something(exit_index, nrow(sorted_df))
+
+    if last_index < nrow(sorted_df)
+        if sorted_df.CAN_LISTING_DT[last_index] > sorted_df.UPDATE_TM[last_index]
+            sorted_df.CAN_LISTING_DT .= missing
+        end
+        if sorted_df.CAN_DIAL_DT[last_index] > sorted_df.UPDATE_TM[last_index]
+            sorted_df.CAN_DIAL_DT .= missing
+        end
+    end
 
     return reverse(sorted_df[1:last_index, :])
 end
@@ -377,8 +386,8 @@ function recipient_from_row(r::DataFrameRow)
         r.CAN_BTH_DT, r.CAN_DIAL_DT, r.CAN_LISTING_DT, blood,
         r.CAN_A1, r.CAN_A2, r.CAN_B1, r.CAN_B2, r.CAN_DR1, r.CAN_DR2,
         r.CPRA,
-        expiration_date = expiration_date,
-        active_waiting_proportion = r.active_waiting_proportion,
+        expiration_date=expiration_date,
+        active_waiting_proportion=r.active_waiting_proportion,
     )
 end
 
@@ -420,7 +429,7 @@ In the latter, it is assumed that it was two kidneys that were refused by the re
 function infer_number_of_kidneys_offered(df_donor::AbstractDataFrame)::Int
 
     check_df_column_constant(df_donor, :DON_ID)
-    
+
     :STATUS ∈ propertynames(df_donor) ||
         throw(ArgumentError("Missing column :STATUS"))
 
@@ -511,83 +520,175 @@ end
 # Load preprocessed data
 
 
+"""
+    load_data(recipient_filepath::AbstractString, cpra_filepath::AbstractString, donor_filepath::AbstractString)
+
+Load and clean the recipient and donor database
+
+# Details
+- To avoid errors in the recipient raw file, recipients are reconstruted using the donor file. A recipient is retrieve if they has received at least an offer from List 5.
+- Si le patient est transplanté, sa sortie s'effectue au moment du décès du donneur.
+- Si le patient n'est pas transplanté, sa date de dernière mise à jour corespond à la date du dernier score sur la liste 5 calculé dans le fichier (ça se peut que le patient n'ait jamais eu l'opportunité d'accepter ou non).
+- Le dataframe des recveurs contient le flag `SCORE_MATCHING_FLAG`. 
+  La valeur 1 indique que le score calculé avec les données du receveur correspond au score enregistré dans le fichier, suggérant une absence d'erreur dans les données du receveur.
+  La valeur 0 indique que le score calculé avec les données du receveur ne correspond pas au score enregistré dans le fichier, suggérant une erreur dans les données du receveur.
+  La valeur missing indique que des données sont manquantes pour le calcul du score.
+"""
 function load_data(recipient_filepath::AbstractString, cpra_filepath::AbstractString, donor_filepath::AbstractString)
 
-    df_recipients = load_recipient(recipient_filepath)
-    df_donors = load_donor(donor_filepath)
+    df_recipients = KidneyAllocation.load_recipient(recipient_filepath)
+    df_donors = KidneyAllocation.load_donor(donor_filepath)
     df_cpra = CSV.read(cpra_filepath, DataFrame; missingstring=["-", "", "NULL"])
 
-    G = groupby(df_recipients, :CAN_ID)
 
-    filtered_df_recipients = similar(df_recipients, 0)
-    filtered_df_donors = similar(df_donors, 0)
-
-    cpra = Vector{Int64}(undef, length(G))
-    time_to_first_offer = Vector{Union{Int64,Missing}}(undef, length(G))
-    time_to_transplant = Vector{Union{Int64,Missing}}(undef, length(G))
-    active_waiting_proportion = Vector{Union{Float64,Missing}}(undef, length(G))
-
-    exit_status = ["TX", "TX VIVANT", "X", "DCD"]
-
-    for (i, df_recipient) in enumerate(G)
-
-        r = last(sort(df_recipient, :UPDATE_TM))
-        push!(filtered_df_recipients, r)
-
-        CAN_ID = r.CAN_ID
-        listing_date = r.CAN_LISTING_DT
-        dialysis_date = r.CAN_DIAL_DT
-        exit_date = uppercase(strip(r.OUTCOME)) ∈ exit_status ? r.UPDATE_TM : nothing
+    # Quelques observations
+    # Le patient 7181, on a que la transplantation est enregistrée le 2017-07-14 dans le fichiers des receveurs, mais le donneur est décédé le 2016-01-14
+    # Le patient CAN_ID = 142 a reçu plusieurs offres de la liste 5, mais a accepté une offre de la liste 10. Il était compétitif jusqu'à ce moment.
+    # Le patient CAN_ID = 14183 a un CPRA de 95, alors c'est pour ça que sa date de dialyse est inconnue.
+    # Le patient 7387 revient sur la liste tout de suite après sa TX 
+    # Le patient 284 est bon exemple où toutes les données sont mélangées lors de la deuxième inscription
 
 
-        df_cpra_recipient = filter(row -> row.CAN_ID == CAN_ID, df_cpra)
+    # Récupération des candidats dont au moins un score a été calculé pour la liste 5
+    # Reconstruction des receveurs par le fichier des donneurs
 
-        if isempty(df_cpra_recipient)
-            cpra[i] = 0
-        else
-            target = r.UPDATE_TM
-            nearest_index = argmin(abs.(df_cpra_recipient.UPDATE_TM .- target))
-            cpra[i] = Int(df_cpra_recipient.CAN_CPRA[nearest_index])
+    is_tx(outcome::Union{Missing,AbstractString}) = uppercase(strip(string(outcome))) == "TX"
+
+    filtered_donors = dropmissing(df_donors, :DON_DEATH_TM)
+    filter!(row -> row.DON_ID ≠ 0, filtered_donors)
+
+    df_offers_recipients = similar(filtered_donors, 0)
+    offered_recipients = unique(df_donors.CAN_ID)
+
+    filtered_recipients = DataFrame(CAN_ID=Int[], CAN_BTH_DT=Date[], CAN_BLOOD=String[],
+        CAN_A1=Int[], CAN_A2=Int[], CAN_B1=Int[], CAN_B2=Int[], CAN_DR1=Int[], CAN_DR2=Int[],
+        CAN_LISTING_DT=DateTime[], CAN_DIAL_DT=Date[],
+        OUTCOME=String[], UPDATE_TM=DateTime[],
+        CPRA=Int[], active_waiting_proportion=Float64[])
+
+    allowmissing!(filtered_recipients)
+
+
+    for CAN_ID in offered_recipients
+
+        df_offers_recipient = sort(filter(row -> row.CAN_ID == CAN_ID, filtered_donors), :DON_DEATH_TM)
+
+        df_list5 = filter(row -> row.ATT_TYPE == 5, df_offers_recipient)
+
+        # Skip if patient has no history on List 5
+        if isempty(df_list5)
+            continue
         end
 
+        # Récupération de la ligne correspondante à la première transplantation (liste 5)
+        ind = findfirst(is_tx, skipmissing(df_list5.STATUS))
 
-        if uppercase(strip(r.OUTCOME)) == "TX"
-            # time_to_transplant[i] = Dates.days(r.UPDATE_TM - r.CAN_LISTING_DT)
-            time_to_transplant[i] = Dates.days(r.UPDATE_TM - dialysis_date)
-        else
-            time_to_transplant[i] = missing
+        # Si receveur non transplanté, on récupére la ligne de la dernière offre (liste 5)
+        if isnothing(ind)
+            ind = nrow(df_list5)
         end
 
-        active_waiting_proportion[i] = KidneyAllocation.recipient_active_waiting_proportion(df_recipient)
+        target_date = df_list5.DON_DEATH_TM[ind]
 
+        # Récupération des informations sur le receveur
+        df_recipient = filter(row -> row.CAN_ID == CAN_ID, df_recipients)
+        df_recipient_first_registration = filter_first_waitlist_episode(df_recipient)
+        p = KidneyAllocation.recipient_active_waiting_proportion(df_recipient_first_registration)
 
-        df_offers = filter(row -> row.CAN_ID == CAN_ID && row.DON_DEATH_TM ≥ listing_date, df_donors)
+        # Récupération du CPRA au moment de la target_date
+        df_cpra_recipient = sort(filter(row -> row.CAN_ID == CAN_ID, df_cpra), :UPDATE_TM, rev=true)
+        latest_index = findfirst(t -> t ≤ target_date, df_cpra_recipient.UPDATE_TM)
+        cpra = isnothing(latest_index) ? 0 : Int(df_cpra_recipient.CAN_CPRA[latest_index])
 
-        if !isnothing(exit_date)
-            filter!(row -> row.DON_DEATH_TM ≤ exit_date, df_offers)
+        registered_outcome = df_recipient_first_registration.OUTCOME[1]
+
+        if is_tx(df_list5.STATUS[ind])
+            outcome = "TX"
+        elseif registered_outcome == "TX"
+            outcome = "X"
+        else
+            outcome = registered_outcome
         end
 
-        # Filtre les df_donors pour ne garder que les lignes qui correspondent à la bonne date de dialyse des receveurs
-        append!(filtered_df_donors, df_offers)
+        r = first(df_recipient_first_registration)
 
-        if !isempty(df_offers)
-            # time_to_first_offer[i] = Dates.days(minimum(df_offers.DON_DEATH_TM) - listing_date)
-            time_to_first_offer[i] = Dates.days(minimum(df_offers.DON_DEATH_TM) - dialysis_date)
+        push!(filtered_recipients,
+            [r.CAN_ID, r.CAN_BTH_DT, r.CAN_BLOOD,
+                r.CAN_A1, r.CAN_A2, r.CAN_B1, r.CAN_B2, r.CAN_DR1, r.CAN_DR2,
+                r.CAN_LISTING_DT, r.CAN_DIAL_DT,
+                outcome, target_date,
+                cpra, p])
+
+    end
+
+    # Check registered score against computed score
+    # A difference in score indicates an error in the data
+
+    df_scores = DataFrame(CAN_ID=Int[], DON_ID=Int[], REGISTERED_SCORE=Float64[], COMPUTED_SCORE=Float64[])
+    allowmissing!(df_scores, :COMPUTED_SCORE)
+
+    for r in eachrow(filtered_recipients)
+
+        df_offers = sort(filter(row -> row.CAN_ID == r.CAN_ID, df_donors), :DON_DEATH_TM)
+
+        ind = findfirst(is_tx, df_offers.STATUS)
+        if isnothing(ind)
+            ind = findlast(df_offers.DON_DEATH_TM .≤ r.UPDATE_TM)
+        end
+
+        registered_score = df_offers.DON_CAN_SCORE[ind]
+
+        computed_score = 
+            try
+                recipient = KidneyAllocation.recipient_from_row(r)
+                donor = KidneyAllocation.donor_from_row(df_offers[ind, :])
+
+                KidneyAllocation.score(donor, recipient)
+            catch err
+                if err isa MethodError
+                    missing
+                else
+                    rethrow()
+                end
+            end
+
+        push!(df_scores, [r.CAN_ID, df_offers.DON_ID[ind], registered_score, computed_score])
+
+    end
+
+    score_diff = abs.(df_scores.COMPUTED_SCORE - df_scores.REGISTERED_SCORE)
+    # count(skipmissing(score_diff .> .1))
+    # count(skipmissing(score_diff .≤ .1))
+    # count(ismissing.(score_diff))
+
+    score_matching_flag = Vector{Union{Bool,Missing}}(undef, length(score_diff))
+
+    for i in eachindex(score_diff)
+        if ismissing(score_diff[i])
+            score_matching_flag[i] = missing
         else
-            time_to_first_offer[i] = missing
+            score_matching_flag[i] = score_diff[i] ≤ 0.1
+        end
+    end
+
+    filtered_recipients.SCORE_MATCHING_FLAG = score_matching_flag
+
+    # Récupération des donneurs de la liste 5
+
+    df_donors_list5 = similar(filtered_donors, 0)
+
+    for df_offer in groupby(filtered_donors, :DON_ID)
+
+        ind = findall(is_tx, df_offer.STATUS)
+        n = count(df_offer.ATT_TYPE[ind] .== 5)
+
+        if n > 0
+            append!(df_donors_list5, df_offer[ind, :])
         end
 
     end
 
-    filtered_df_recipients.CPRA = cpra
-    filtered_df_recipients.active_waiting_proportion = active_waiting_proportion
-    filtered_df_recipients.time_to_first_offer = time_to_first_offer
-    filtered_df_recipients.time_to_transplant = time_to_transplant
-
-    # Si time_to_first_offer == missing mais qu'on a time_to_transplant != missing, time_to_first_offer est fixé à time_to_transplant
-    filtered_df_recipients[!, :time_to_first_offer] = coalesce.(filtered_df_recipients[!, :time_to_first_offer], filtered_df_recipients[!, :time_to_transplant])
-
-    return filtered_df_recipients, filtered_df_donors
+    return filtered_recipients, df_donors_list5
 
 end
 
@@ -613,7 +714,7 @@ function build_donor_registry(df_donors::AbstractDataFrame)
         n = count(g.DECISION .== "Acceptation")
 
         donor_registry[r.DON_ID] = donor
-        given_kidneys[r.DON_ID]= infer_number_of_kidneys_offered(g)
+        given_kidneys[r.DON_ID] = infer_number_of_kidneys_offered(g)
         # given_kidneys[r.DON_ID] = n == 0 ? 1 : n  # Parfois, le nombre de reins est égal à 0 car on a retiré le receveur qui la reçu en raison des multiples inscriptions 
     end
 
@@ -642,12 +743,12 @@ function build_recipient_registry(df_recipients::AbstractDataFrame)
         :CAN_BTH_DT, :CAN_DIAL_DT, :CAN_LISTING_DT,
         :CAN_BLOOD, :CAN_A1, :CAN_A2, :CAN_B1, :CAN_B2, :CAN_DR1, :CAN_DR2
     ]
-    
+
     df = dropmissing(df_recipients, required)
 
     recipient_registry = Dict{Int,Recipient}()
-    time_to_first_offer_registry = Dict{Int,Union{Int, Missing}}()
-    time_to_transplant_registry = Dict{Int,Union{Int, Missing}}()
+    time_to_first_offer_registry = Dict{Int,Union{Int,Missing}}()
+    time_to_transplant_registry = Dict{Int,Union{Int,Missing}}()
 
     for r in eachrow(df)
         recipient_registry[r.CAN_ID] = recipient_from_row(r)
@@ -1034,7 +1135,7 @@ retrieve_observed_waiting_list(df_recipients::AbstractDataFrame, date::Date) = r
 #     for g in groupby(df, :CAN_ID)
 #         append!(filtered_df, filter_outcomes(g))
 #     end
-    
+
 #     # Keeping only the first outcome after the registered dialysis date for each recipient. Some recipients are registered more than once and key information are lost for the additional registration
 #     filtered_df = similar(df, 0)
 #     for g in groupby(df, :CAN_ID)
