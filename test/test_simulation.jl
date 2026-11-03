@@ -84,15 +84,20 @@
             Donor[],
         ]
 
+        # Load decision model dm
+        @load "../src/SyntheticData/TreeDecisionModel.jld2"
+
         offers_df = KidneyAllocation.offers_to_dataframes(
             focal_recipient,
             offers_by_simulation,
+            dm
         )
 
         @test nrow(offers_df) == 2
         @test offers_df.simulation_id == [1, 1]
         @test offers_df.offer_number == [1, 2]
-        @test offers_df.elapsed_days == [10, 31]
+        @test offers_df.elapsed_days_since_arrival == [10, 31]
+        @test offers_df.elapsed_days_since_dialysis == [1836, 1857]
         @test offers_df.kdri == [1.5, 1.6]
 
     end

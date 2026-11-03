@@ -122,6 +122,18 @@
 
     end
 
+    @testset "filter_first_waitlist_episode" begin
+        import KidneyAllocation.filter_first_waitlist_episode
+
+        @test nrow(filter_first_waitlist_episode(G[1])) == nrow(G[1])
+        @test nrow(filter_first_waitlist_episode(G[2])) == 2
+        @test nrow(filter_first_waitlist_episode(G[3])) == nrow(G[3])
+        @test nrow(filter_first_waitlist_episode(G[4])) == 2
+        @test nrow(filter_first_waitlist_episode(G[5])) == nrow(G[5])
+        @test nrow(filter_first_waitlist_episode(G[6])) == nrow(G[6])
+    end
+
+
     @testset "get_exit_date()" begin
         import KidneyAllocation.get_exit_date
         @test get_exit_date(df[1, :]) == DateTime(2012,4,24,14,33,41) # TX

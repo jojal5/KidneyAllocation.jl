@@ -213,6 +213,29 @@ function first_exit_after_dialysis(df::AbstractDataFrame)::Union{DateTime,Nothin
 end
 
 """
+    filter_first_waitlist_episode(df_recipient) -> DataFrame
+
+Return records from the first waiting-list episode of one recipient, ordered by
+`:UPDATE_TM`. Rows after the first exit outcome are removed, while the exit
+record itself is retained. If no exit outcome is recorded, all rows are kept.
+"""
+function filter_first_waitlist_episode(df_recipient::AbstractDataFrame)::DataFrame
+    check_df_column_constant(df_recipient, :CAN_ID)
+    check_df_columns(df_recipient, :OUTCOME, :UPDATE_TM)
+
+    isempty(df_recipient) && return DataFrame(df_recipient)
+
+    exit_outcomes = ("TX", "TX VIVANT", "X", "DCD")
+    is_exit(outcome) = uppercase(strip(string(outcome))) ∈ exit_outcomes
+
+    sorted_df = sort(df_recipient, :UPDATE_TM)
+    exit_index = findfirst(is_exit, sorted_df.OUTCOME)
+    last_index = something(exit_index, nrow(sorted_df))
+
+    return reverse(sorted_df[1:last_index, :])
+end
+
+"""
     get_exit_date(r::DataFrameRow) -> Union{DateTime,Nothing}
 
 Return the time of the exit from the waiting list for a single
@@ -305,7 +328,7 @@ function recipient_active_waiting_proportion(df::AbstractDataFrame)::Float64
     isempty(df) && return 0.0
 
     check_df_columns(df, :OUTCOME, :UPDATE_TM)
-    check_df_column_constant(df, :CAN_ID, :CAN_LISTING_DT, :CAN_DIAL_DT)
+    check_df_column_constant(df, :CAN_ID, :CAN_LISTING_DT)
     check_df_at_most_one_exit_outcome(df)
 
     recipient_df = sort(df, :UPDATE_TM)
