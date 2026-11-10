@@ -123,19 +123,15 @@ in `:CAN_DIAL_DT`, modifying `df` in place.
 `:CAN_DIAL_DT` must be non-missing.
 """
 function coalesce_listing!(df::AbstractDataFrame)
-    for col in (:CAN_LISTING_DT, :CAN_DIAL_DT)
-        col ∈ propertynames(df) ||
-            throw(ArgumentError("Missing column :$col"))
-    end
+    check_df_columns(df, :CAN_DIAL_DT)
 
-    any(ismissing, df[!, :CAN_DIAL_DT]) &&
-        throw(ArgumentError("Column :CAN_DIAL_DT contains missing values"))
+    :CAN_LISTING_DT ∈ propertynames(df) ||
+        throw(ArgumentError("Missing column :CAN_LISTING_DT"))
 
-    for row in eachrow(df)
-        if ismissing(row.CAN_LISTING_DT)
-            row.CAN_LISTING_DT = row.CAN_DIAL_DT
-        end
-    end
+    df[!, :CAN_LISTING_DT] = coalesce.(
+        df.CAN_LISTING_DT,
+        DateTime.(df.CAN_DIAL_DT),
+    )
 
     return df
 end
@@ -236,7 +232,7 @@ function filter_first_waitlist_episode(df_recipient::AbstractDataFrame)::DataFra
         if sorted_df.CAN_LISTING_DT[last_index] > sorted_df.UPDATE_TM[last_index]
             sorted_df.CAN_LISTING_DT .= missing
         end
-        if sorted_df.CAN_DIAL_DT[last_index] > sorted_df.UPDATE_TM[last_index]
+        if !ismissing(sorted_df.CAN_DIAL_DT[last_index]) && sorted_df.CAN_DIAL_DT[last_index] > sorted_df.UPDATE_TM[last_index]
             sorted_df.CAN_DIAL_DT .= missing
         end
     end
@@ -593,31 +589,39 @@ function load_data(recipient_filepath::AbstractString, cpra_filepath::AbstractSt
         # Récupération des informations sur le receveur
         df_recipient = filter(row -> row.CAN_ID == CAN_ID, df_recipients)
         df_recipient_first_registration = filter_first_waitlist_episode(df_recipient)
-        p = KidneyAllocation.recipient_active_waiting_proportion(df_recipient_first_registration)
 
-        # Récupération du CPRA au moment de la target_date
-        df_cpra_recipient = sort(filter(row -> row.CAN_ID == CAN_ID, df_cpra), :UPDATE_TM, rev=true)
-        latest_index = findfirst(t -> t ≤ target_date, df_cpra_recipient.UPDATE_TM)
-        cpra = isnothing(latest_index) ? 0 : Int(df_cpra_recipient.CAN_CPRA[latest_index])
-
-        registered_outcome = df_recipient_first_registration.OUTCOME[1]
-
-        if is_tx(df_list5.STATUS[ind])
-            outcome = "TX"
-        elseif registered_outcome == "TX"
-            outcome = "X"
+        # Si la date de dialyse est manquante, on ne retient pas le receveur
+        if any(ismissing.(df_recipient_first_registration.CAN_DIAL_DT))
+            continue
         else
-            outcome = registered_outcome
+            # If listing date is missing, replace it by dialysis date
+            coalesce_listing!(df_recipient_first_registration)
+            p = KidneyAllocation.recipient_active_waiting_proportion(df_recipient_first_registration)
+
+            # Récupération du CPRA au moment de la target_date
+            df_cpra_recipient = sort(filter(row -> row.CAN_ID == CAN_ID, df_cpra), :UPDATE_TM, rev=true)
+            latest_index = findfirst(t -> t ≤ target_date, df_cpra_recipient.UPDATE_TM)
+            cpra = isnothing(latest_index) ? 0 : Int(df_cpra_recipient.CAN_CPRA[latest_index])
+
+            registered_outcome = df_recipient_first_registration.OUTCOME[1]
+
+            if is_tx(df_list5.STATUS[ind])
+                outcome = "TX"
+            elseif registered_outcome == "TX"
+                outcome = "X"
+            else
+                outcome = registered_outcome
+            end
+
+            r = first(df_recipient_first_registration)
+
+            push!(filtered_recipients,
+                [r.CAN_ID, r.CAN_BTH_DT, r.CAN_BLOOD,
+                    r.CAN_A1, r.CAN_A2, r.CAN_B1, r.CAN_B2, r.CAN_DR1, r.CAN_DR2,
+                    r.CAN_LISTING_DT, r.CAN_DIAL_DT,
+                    outcome, target_date,
+                    cpra, p])
         end
-
-        r = first(df_recipient_first_registration)
-
-        push!(filtered_recipients,
-            [r.CAN_ID, r.CAN_BTH_DT, r.CAN_BLOOD,
-                r.CAN_A1, r.CAN_A2, r.CAN_B1, r.CAN_B2, r.CAN_DR1, r.CAN_DR2,
-                r.CAN_LISTING_DT, r.CAN_DIAL_DT,
-                outcome, target_date,
-                cpra, p])
 
     end
 
@@ -679,11 +683,17 @@ function load_data(recipient_filepath::AbstractString, cpra_filepath::AbstractSt
 
     for df_offer in groupby(filtered_donors, :DON_ID)
 
-        ind = findall(is_tx, df_offer.STATUS)
-        n = count(df_offer.ATT_TYPE[ind] .== 5)
+        # ind = findall(is_tx, df_offer.STATUS)
+        df = filter(row -> is_tx(row.STATUS), df_offer) 
 
-        if n > 0
-            append!(df_donors_list5, df_offer[ind, :])
+        ind_not_list5 = findall(df.ATT_TYPE .!= 5)
+        if !isempty(ind_not_list5)
+            id_to_remove = df.CAN_ID[ind_not_list5]
+            filter!(row -> row.CAN_ID ∉ id_to_remove, df)
+        end
+
+        if nrow(df) > 0
+            append!(df_donors_list5, df)
         end
 
     end
@@ -722,20 +732,7 @@ function build_donor_registry(df_donors::AbstractDataFrame)
 end
 
 
-"""
-    build_recipient_registry(recipient_filepath, cpra_filepath) -> Dict{Int,Recipient}
 
-Build a dictionary of `Recipient` objects keyed by `CAN_ID`.
-
-### Arguments
-- `recipient_filepath::String`: Path to the recipient CSV file (loaded by `load_recipient`).
-- `cpra_filepath::String`: Path to the CPRA CSV file used to compute the latest CPRA per `CAN_ID`.
-
-### Notes
-- The expiration date is inferred from the status history and passed as
-  `expiration_date=...` when constructing the `Recipient`.
-- Rows with missing required fields are discarded.
-"""
 function build_recipient_registry(df_recipients::AbstractDataFrame)
 
     required = Symbol[
@@ -747,16 +744,12 @@ function build_recipient_registry(df_recipients::AbstractDataFrame)
     df = dropmissing(df_recipients, required)
 
     recipient_registry = Dict{Int,Recipient}()
-    time_to_first_offer_registry = Dict{Int,Union{Int,Missing}}()
-    time_to_transplant_registry = Dict{Int,Union{Int,Missing}}()
 
     for r in eachrow(df)
         recipient_registry[r.CAN_ID] = recipient_from_row(r)
-        time_to_first_offer_registry[r.CAN_ID] = r.time_to_first_offer
-        time_to_transplant_registry[r.CAN_ID] = r.time_to_transplant
     end
 
-    return recipient_registry, time_to_first_offer_registry, time_to_transplant_registry
+    return recipient_registry
 end
 
 """

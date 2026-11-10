@@ -3,8 +3,6 @@ Pkg.activate(".")
 
 using CSV, DataFrames, Dates, JLD2, Random, Statistics, Test
 
-using Gadfly
-
 using KidneyAllocation
 
 
@@ -16,49 +14,64 @@ donor_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-rese
 
 df_recipients, df_donors = KidneyAllocation.load_data(recipient_filepath, cpra_filepath, donor_filepath)
 
+## build_donor_registry
+
+donor_registry, given_kidneys = KidneyAllocation.build_donor_registry(df_donors)
+recipient_registry = KidneyAllocation.build_recipient_registry(df_recipients)
+
+
+count(skipmissing(df_recipients.SCORE_MATCHING_FLAG))
+count(skipmissing(.!(df_recipients.SCORE_MATCHING_FLAG)))
+count(ismissing.(df_recipients.SCORE_MATCHING_FLAG))
 
 
 
 ## Récupération des décisions
 
-df_decision = similar(filtered_donors, 0)
+df_offers = KidneyAllocation.load_donor(donor_filepath)
+filter!(row -> row.ATT_TYPE == 5, df_offers)
 
-for df_offer in groupby(filtered_donors, :DON_ID)
+df_offers_filtered = similar(df_offers, 0)
 
-# df_offer = filter(row -> row.DON_ID == 616, filtered_donors)
+for df_offer in groupby(df_offers, :DON_ID)
 
-    println(df_offer.DON_ID[1])
-
-    ind = findall(is_tx, df_offer.STATUS)
-
-    n = clamp(2 - count(df_offer.ATT_TYPE[ind] .!= 5) - count(df_offer.ATT_TYPE .== 0), 0, 2)
-    if n == 0 # No kidney offerred on list 5
-        continue
-    end 
-
-    df_offer_list5_sorted = sort( filter(row -> row.ATT_TYPE==5, df_offer) ,:DON_CAN_SCORE, rev = true)
-
-
-    ind = findall(is_tx, df_offer_list5_sorted.STATUS)
-    if isnothing(ind) || length(ind) < n   # At least a kidney is refused by all recipients
-        append!(df_decision, df_offer_list5_sorted)
-    else
-        append!(df_decision, df_offer_list5_sorted[1:ind[n], :])
-    end
+    filtered_df = KidneyAllocation.filter_offers_until_last_acceptance(df_offer)
+    append!(df_offers_filtered, filtered_df)
 
 end
 
 
-## Il faut transférer en varibles ... temps d'attente, mismatch, kdri ...
+df_offers_filtered
+
+## Time to tx
+# Computed in elapsed days since dialysis
+
+time_to_transplant = Dict{Int, Int}()
+
+for row in eachrow(df_donors)
+    if haskey(recipient_registry, row.CAN_ID)
+        recipient = recipient_registry[row.CAN_ID]
+        elapsed_days = Dates.days(Dates.Date(row.DON_DEATH_TM) - recipient.dialysis)
+        time_to_transplant[row.CAN_ID] = elapsed_days
+    end
+end
 
 
+## Time to first offer
+# Computed in elapsed days since dialysis
 
+time_to_first_offer = Dict{Int, Int}()
 
-n_train = round(Int, nrow(df_decision) * 2/3)
-rng = MersenneTwister(12345)
-train_ind = sort(shuffle(rng, 1:nrow(df_decision))[1:n_train])
-validation_ind = sort(setdiff(1:nrow(df_decision), train_ind))
+df_offers_filtered
 
-df_train = df_decision[train_ind, :]
-df_validation = df_decision[validation_ind, :]
+for g in groupby(df_offers_filtered, :CAN_ID)
 
+    CAN_ID = first(g.CAN_ID)
+
+    if haskey(recipient_registry, CAN_ID)
+        recipient = recipient_registry[CAN_ID]
+        elapsed_days = Dates.days(Dates.Date(minimum(g.DON_DEATH_TM)) - recipient.dialysis)
+        time_to_first_offer[CAN_ID] = elapsed_days
+    end
+
+end
