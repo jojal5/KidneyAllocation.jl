@@ -3,8 +3,8 @@
 
 using Base.Threads
 
-using Pkg
-Pkg.activate(".")
+# using Pkg
+# Pkg.activate(".")
 
 using Dates, CSV, DataFrames, Distributions, JLD2, Random
 
@@ -18,13 +18,24 @@ donor_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-rese
 
 df_recipients, df_donors = KidneyAllocation.load_data(recipient_filepath, cpra_filepath, donor_filepath)
 
-donor_registry, given_kidneys_registry = KidneyAllocation.build_donor_registry(df_donors) 
-recipient_registry, time_to_first_offer_registry, time_to_transplant_registry = KidneyAllocation.build_recipient_registry(df_recipients)
+# On ne retient que les patients majeurs
+filter!(row -> KidneyAllocation.years_between(row.CAN_BTH_DT, row.CAN_LISTING_DT) > 17, df_recipients)
+
+# On ne retient que la première inscription des candidats
+# df_donors = unique( sort(df_donors, :DON_DEATH_TM), :CAN_ID)
+# Ça fait qu'on ignore les patients qui reviennent et les arrivées des reins qui leurs sont attribués
+
+# donor_registry, given_kidneys_registry = KidneyAllocation.build_donor_registry(df_donors) 
+# recipient_registry, time_to_first_offer_registry, time_to_transplant_registry = KidneyAllocation.build_recipient_registry(df_recipients)
+
+donor_registry, given_kidneys_registry = KidneyAllocation.build_donor_registry(df_donors)
+recipient_registry = KidneyAllocation.build_recipient_registry(df_recipients)
 
 
 ## Load decision model
 
-@load "src/SyntheticData/TreeDecisionModel.jld2"
+# @load "src/SyntheticData/TreeDecisionModel.jld2"
+@load "src/SyntheticData/GLMDecisionModel.jld2"
 
 
 ## Estimation of the recipient arrival rate
@@ -83,7 +94,6 @@ function count_donor_arrivals(df::AbstractDataFrame, start_time::Date, end_time:
     return n_donors
 end
 
-
 recipient_arrival_rate = count_recipient_arrivals(df_recipients, start_time, end_time) / fractionalyears_between(start_time, end_time)
 
 
@@ -101,6 +111,8 @@ donor_arrival_rate = count_donor_arrivals(df_donors, start_time, end_time) / fra
 TX_ids = Int64[]
 
 df_TX = filter(row-> row.OUTCOME == "TX", df_recipients)
+dropmissing!(df_TX, :SCORE_MATCHING_FLAG)
+filter!(row->row.SCORE_MATCHING_FLAG, df_TX)
 filter!(row->row.CAN_LISTING_DT ≥ Date(2016,1,1), df_TX)
 filter!(row->row.UPDATE_TM < Date(2020,1,1), df_TX)
 filter!(row->row.CPRA < 80, df_TX)
@@ -129,10 +141,12 @@ TX_ids = df_TX.CAN_ID
 
 ## Selection of a recipient and simulation
 
-    nyears = 5
-    nsim = 1000
+nyears = 5
+nsim = 1000
 
 Threads.@threads for id in TX_ids
+# for id in TX_ids
+# id = 13707
 
     recipient = recipient_registry[id]
 
@@ -169,4 +183,5 @@ Threads.@threads for id in TX_ids
     CSV.write(filename, df)
 
 end
+
 

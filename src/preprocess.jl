@@ -594,8 +594,13 @@ function load_data(recipient_filepath::AbstractString, cpra_filepath::AbstractSt
         if any(ismissing.(df_recipient_first_registration.CAN_DIAL_DT))
             continue
         else
-            # If listing date is missing, replace it by dialysis date
+            # If listing date is missing, or later than dialysis (happens if more than one inscription), replace it by dialysis date
             coalesce_listing!(df_recipient_first_registration)
+            # If listing date is later than dialysis (happens if more than one inscription), replace it by dialysis date
+            # if df_recipient_first_registration.CAN_LISTING_DT[1] > df_recipient_first_registration.CAN_DIAL_DT[1]
+            #     df_recipient_first_registration.CAN_LISTING_DT .= df_recipient_first_registration.CAN_DIAL_DT[1]
+            # end
+
             p = KidneyAllocation.recipient_active_waiting_proportion(df_recipient_first_registration)
 
             # Récupération du CPRA au moment de la target_date
@@ -721,10 +726,11 @@ function build_donor_registry(df_donors::AbstractDataFrame)
     for g in groupby(filtered_df_donors, :DON_ID)
         r = first(g)
         donor = donor_from_row(r)
-        n = count(g.DECISION .== "Acceptation")
+        n = count(uppercase.(strip.(g.STATUS)) .== "TX")
 
         donor_registry[r.DON_ID] = donor
-        given_kidneys[r.DON_ID] = infer_number_of_kidneys_offered(g)
+        given_kidneys[r.DON_ID] = n
+        # given_kidneys[r.DON_ID] = infer_number_of_kidneys_offered(g)
         # given_kidneys[r.DON_ID] = n == 0 ? 1 : n  # Parfois, le nombre de reins est égal à 0 car on a retiré le receveur qui la reçu en raison des multiples inscriptions 
     end
 

@@ -12,9 +12,120 @@ cpra_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-resea
 donor_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Donors.csv"
 
 df_recipients, df_donors = KidneyAllocation.load_data(recipient_filepath, cpra_filepath, donor_filepath)
+# On ne retient que les patients majeurs
+filter!(row -> KidneyAllocation.years_between(row.CAN_BTH_DT, row.CAN_LISTING_DT) > 17, df_recipients)
 
 donor_registry, given_kidneys_registry = KidneyAllocation.build_donor_registry(df_donors) 
 recipient_registry, time_to_first_offer_registry, time_to_transplant_registry = KidneyAllocation.build_recipient_registry(df_recipients)
+
+
+## Transplanted recipient
+
+df_TX = filter(row-> row.OUTCOME == "TX", df_recipients)
+dropmissing!(df_TX, :SCORE_MATCHING_FLAG)
+filter!(row->row.SCORE_MATCHING_FLAG, df_TX)
+filter!(row->row.CAN_LISTING_DT ≥ Date(2016,1,1), df_TX)
+filter!(row->row.UPDATE_TM < Date(2020,1,1), df_TX)
+filter!(row->row.CPRA < 80, df_TX)
+TX_ids = Int.(df_TX.CAN_ID)
+
+elapsed_days_since_arrival = Dict{Int,Int}()
+elapsed_days_since_dialysis = Dict{Int,Int}()
+
+for r in eachrow(df_TX)
+    elapsed_days_since_arrival[r.CAN_ID] = Dates.days(r.UPDATE_TM - r.CAN_LISTING_DT)
+    elapsed_days_since_dialysis[r.CAN_ID] = Dates.days(Date(r.UPDATE_TM) - r.CAN_DIAL_DT)
+end
+
+## Récupération des résultats
+
+id = TX_ids[6]
+
+sim_folder = "/Users/jalbert/Dropbox/Files/Supervision/encours/AnastasiyaOlekBasanets/Simulations"
+filepath = joinpath(sim_folder, "$id.csv")
+
+res = CSV.read(filepath, DataFrame)
+
+t1 = first_qualifying_offer_quantile_given_offer(res, .25)
+t2 = first_qualifying_offer_quantile_given_offer(res, .5)
+t3 = first_qualifying_offer_quantile_given_offer(res, .75)
+
+elapsed_days_since_arrival[id]
+elapsed_days_since_dialysis[id]
+
+
+## Check calibration for all recipients - Time to transplant
+
+q1 = falses(length(TX_ids))
+q2 = falses(length(TX_ids))
+q3 = falses(length(TX_ids))
+
+for (i, id) in enumerate(TX_ids)
+
+    println(i)
+
+    # obs_waiting_time_before_first_offer = time_to_first_offer_registry[id]
+    obs_waiting_time_before_first_offer = elapsed_days_since_dialysis[id]
+
+    filepath = joinpath(sim_folder, "$id.csv")
+    res = CSV.read(filepath, DataFrame)
+
+    t1 = first_qualifying_offer_quantile_given_offer(res, .25)
+    t2 = first_qualifying_offer_quantile_given_offer(res, .5)
+    t3 = first_qualifying_offer_quantile_given_offer(res, .75)
+
+    q1[i] = !isnothing(t1) && obs_waiting_time_before_first_offer ≤ t1
+    q2[i] = !isnothing(t2) && obs_waiting_time_before_first_offer ≤ t2
+    q3[i] = !isnothing(t3) && obs_waiting_time_before_first_offer ≤ t3
+
+end
+
+p₁ = count(q1)/length(q1)
+p₂ = count(q2)/length(q2)
+p₃ = count(q3)/length(q3)
+
+
+
+
+
+
+
+
+
+import KidneyAllocation: check_df_columns
+"""
+    first_qualifying_offer_quantile_given_offer(df, p; max_kdri=Inf)
+
+Return the `p`th quantile of time to first qualifying offer, conditional on
+receiving at least one qualifying offer during the simulation.
+"""
+function first_qualifying_offer_quantile_given_offer(
+    df::AbstractDataFrame,
+    p::Real;
+    max_kdri::Real=Inf,
+)::Union{Float64,Nothing}
+    check_df_columns(df, :simulation_id, :elapsed_days_since_arrival, :kdri)
+
+    0 < p < 1 ||
+        throw(ArgumentError("`p` must lie strictly between 0 and 1"))
+
+    qualifying_df = filter(row -> row.kdri ≤ max_kdri, df)
+    isempty(qualifying_df) && return nothing
+
+    first_times = combine(
+        groupby(qualifying_df, :simulation_id),
+        :elapsed_days_since_dialysis => minimum => :elapsed_days_since_dialysis,
+    )
+
+    return quantile(first_times.:elapsed_days_since_dialysis, p)
+end
+
+
+
+
+
+
+
 
 ## TX recipients 
 
@@ -585,7 +696,7 @@ function first_qualifying_offer_quantile_given_offer(
     p::Real;
     max_kdri::Real=Inf,
 )::Union{Float64,Nothing}
-    check_df_columns(df, :simulation_id, :elapsed_days, :kdri)
+    check_df_columns(df, :simulation_id, :elapsed_days_since_arrival, :kdri)
 
     0 < p < 1 ||
         throw(ArgumentError("`p` must lie strictly between 0 and 1"))
@@ -595,10 +706,10 @@ function first_qualifying_offer_quantile_given_offer(
 
     first_times = combine(
         groupby(qualifying_df, :simulation_id),
-        :elapsed_days => minimum => :elapsed_days,
+        :elapsed_days_since_arrival => minimum => :elapsed_days_since_arrival,
     )
 
-    return quantile(first_times.elapsed_days, p)
+    return quantile(first_times.:elapsed_days_since_arrival, p)
 end
 
 

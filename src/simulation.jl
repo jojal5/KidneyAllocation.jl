@@ -18,8 +18,8 @@ arrival dates over the simulation window.
 function generate_arrivals(
     ids::AbstractVector{<:Int},
     arrival_rate::Real;
-    origin,
-    nyears,
+    origin::Date,
+    nyears::Int,
     rng::AbstractRNG=Random.default_rng(),
 )
     arrival_rate ≥ 0 ||
@@ -55,7 +55,7 @@ function generate_arrivals(
 
     ids = collect(keys(registry))
     sampled_ids, sampled_arrivals = generate_arrivals(
-        ids, arrival_rate; origin, nyears, rng,
+        ids, arrival_rate; origin=origin, nyears=nyears, rng=rng,
     )
 
     return reconstruct_recipients(registry, sampled_ids, sampled_arrivals)
@@ -78,7 +78,7 @@ function generate_arrivals(
 
     ids = collect(keys(registry))
     sampled_ids, sampled_arrivals = generate_arrivals(
-        ids, arrival_rate; origin, nyears, rng,
+        ids, arrival_rate; origin=origin, nyears=nyears, rng=rng,
     )
 
     multiple_sampled_ids = Int64[]

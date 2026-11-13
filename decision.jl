@@ -40,7 +40,7 @@ end
 
 ## Build decision dataset
 
-df_decision = DataFrame(DON_ID = Int[], DON_AGE = Int[], KDRI = Float64[], CAN_AGE = Int[], CAN_BLOOD = ABOGroup[],  WAITTIME = Float64[], SCORE = Float64[], CPRA = Int[], MISMATCH = Int[], DECISION = Bool[])
+df_decision = DataFrame(DON_ID = Int[], DON_AGE = Int[], KDRI = Float64[], CAN_AGE = Int[], CAN_BLOOD = ABOGroup[],  CAN_WAIT = Float64[], DON_CAN_SCORE = Float64[], CPRA = Int[], MISMATCH = Int[], DECISION = Bool[])
 
 # Only patient between 2016 and 2020
 df = filter(row -> row.DON_DEATH_TM ≥ Date(2016,1,1) && row.DON_DEATH_TM < Date(2020,1,1), df_offers_filtered)
@@ -88,7 +88,7 @@ df_decision.LEARNING_SET = learning_set
 
 df_decision.AGE_GAP = df_decision.CAN_AGE - df_decision.DON_AGE
 
-select!(df_decision, :DON_AGE, :KDRI, :CAN_AGE, :CAN_BLOOD, :WAITTIME, :SCORE, :CPRA, :MISMATCH, :AGE_GAP, :DECISION, :LEARNING_SET)
+select!(df_decision, :DON_AGE, :KDRI, :CAN_AGE, :CAN_BLOOD, :CAN_WAIT, :DON_CAN_SCORE, :CPRA, :MISMATCH, :AGE_GAP, :DECISION, :LEARNING_SET)
 
 df_decision.is_bloodtype_A = df_decision.CAN_BLOOD .== A
 df_decision.is_bloodtype_B = df_decision.CAN_BLOOD .== B
@@ -105,7 +105,7 @@ data_validation = filter(row -> row.LEARNING_SET == "validation", df_decision)
 # model = @formula(DECISION ~ log(KDRI) + CAN_BLOOD + CAN_WAIT + CAN_WAIT^2 + CPRA + CPRA^2 + CAN_AGE + CAN_AGE^2 + DON_CAN_SCORE)
 # model = @formula(DECISION ~ KDRI + CAN_AGE * KDRI * CAN_WAIT + CAN_AGE^2 * KDRI * CAN_WAIT^2 + CAN_BLOOD + CPRA + DON_CAN_SCORE)
 
-model = @formula(DECISION ~ log(KDRI)*CAN_AGE + CAN_BLOOD + CPRA + SCORE)
+model = @formula(DECISION ~ log(KDRI)*CAN_AGE + CAN_BLOOD + CPRA + DON_CAN_SCORE)
 
 fm = glm(model, data_train, Bernoulli(), LogitLink())
 
@@ -151,8 +151,8 @@ features = Symbol.([
     "DON_AGE"
     "KDRI"
     "CAN_AGE"
-    "WAITTIME"
-    "SCORE"
+    "CAN_WAIT"
+    "DON_CAN_SCORE"
     "CPRA"
     "MISMATCH"
     "AGE_GAP"
@@ -201,6 +201,6 @@ brier_score(df_decision.DECISION, p)
 
 u = KidneyAllocation.fit_threshold_f1(df_decision.DECISION, p)
 
-dm = GLMDecisionModel(fm, u)
+dm = TreeDecisionModel(tree, features, u)
 
 jldsave("src/SyntheticData/TreeDecisionModel.jld2"; dm)
