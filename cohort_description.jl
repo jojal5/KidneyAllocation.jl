@@ -1,15 +1,30 @@
 using Pkg
 Pkg.activate(".")
 
-using CSV, DataFrames, Dates, Gadfly, Statistics
+using CSV, DataFrames, Dates, Distributions, Statistics
+
+using Cairo, Fontconfig, Gadfly
+using ExtremePlots
 
 using KidneyAllocation
+
+fig_folder = "/Users/jalbert/Dropbox/Files/Supervision/encours/AnastasiyaOlekBasanets/Figures"
+
 
 recipient_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Candidates.csv"
 cpra_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/CandidatesCPRA.csv"
 donor_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Donors.csv"
 
-import KidneyAllocation: retrieve_observed_waiting_list, load_recipient, load_donor
+df_recipients, df_donors = KidneyAllocation.load_data(recipient_filepath, cpra_filepath, donor_filepath)
+
+# On ne retient que les patients majeurs
+filter!(row -> KidneyAllocation.years_between(row.CAN_BTH_DT, row.CAN_LISTING_DT) > 17, df_recipients)
+
+# On ne retient que la première inscription des candidats
+# df_donors = unique( sort(df_donors, :DON_DEATH_TM), :CAN_ID)
+
+donor_registry, given_kidneys = KidneyAllocation.build_donor_registry(df_donors)
+recipient_registry = KidneyAllocation.build_recipient_registry(df_recipients)
 
 ## Candidates on the waiting list
 
@@ -17,18 +32,22 @@ t = Date(2012,1,1):Month(1):Date(2024,1,1)
 n = Vector{Int64}(undef, length(t))
 
 for (i,tᵢ) in enumerate(t)
-    ids = retrieve_observed_waiting_list(recipient_filepath, tᵢ)
+    ids = KidneyAllocation.retrieve_observed_waiting_list(df_recipients, tᵢ)
     n[i] = length(ids)
 end
 
 df = DataFrame(Date = t, Candidates = n)
 
-plot(df, x=:Date, y=:Candidates)
+fig = plot(df, x=:Date, y=:Candidates,
+    Coord.cartesian(xmax=Date(2022,1,1)),
+    Guide.ylabel("Waiting candidates"),
+    Theme(default_color = "gray30"))
 
+    
+filepath = joinpath(fig_folder, "waiting_candidates.pdf")
+draw(PDF(filepath), fig)
 
 ## Monthly donor arrivals
-
-df_donors = load_donor(donor_filepath)
 
 df_donor_arrival = DataFrame(DON_ID = Int64[], DON_DEATH_TM = DateTime[])
 
@@ -45,12 +64,24 @@ df = combine(groupby(df_donor_arrival, [:year, :month]), :DON_DEATH_TM => length
 d = [Date(r.year, r.month, 1) for r in eachrow(df) ]
 df.Date = d
 
-plot(df, x=:Date, y=:Donors)
+filter!(row -> row.Date ≥ Date(2012,4, 1) && row.Date < Date(2022,8,1), df)
+
+fig = plot(df, x=:Date, y=:Donors, Theme(default_color = "gray30"),
+    Guide.ylabel("Donor monthly arrivals"))
+
+filepath = joinpath(fig_folder, "monthly_donors.pdf")
+draw(PDF(filepath), fig)
+
+
+
+λ̂ = mean(df.Donors)
+pd = Poisson(λ̂)
+fig = qqplot(pd, df.Donors)
+filepath = joinpath(fig_folder, "fitted_Poisson_donors.pdf")
+draw(PDF(filepath), fig)
 
 
 ## Monthly candidate arrivals
-
-df_recipients = load_recipient(recipient_filepath)
 
 df_recipient_arrival = DataFrame(CAN_ID = Int64[], CAN_LISTING_DT = DateTime[])
 
@@ -66,184 +97,121 @@ df = combine(groupby(df_recipient_arrival, [:year, :month]), :CAN_LISTING_DT => 
 d = [Date(r.year, r.month, 1) for r in eachrow(df) ]
 df.Date = d
 
-plot(df, x=:Date, y=:Candidates)
+filter!(row -> row.Date ≥ Date(2012,4, 1) && row.Date < Date(2022,8,1), df)
+
+fig = plot(df, x=:Date, y=:Candidates, Theme(default_color = "gray30"),
+    Guide.ylabel("Candiate monthly arrivals"))
+
+filepath = joinpath(fig_folder, "monthly_candidates.pdf")
+draw(PDF(filepath), fig)
+
+
+λ̂ = mean(df.Candidates)
+pd = Poisson(λ̂)
+fig = qqplot(pd, df.Candidates)
+filepath = joinpath(fig_folder, "fitted_Poisson_recipients.pdf")
+draw(PDF(filepath), fig)
 
 
 
 ## Retrieve transplanted recipients for prediction
 
-df = filter(row -> row.OUTCOME == "TX" &&
-    row.CAN_LISTING_DT ≥ Date(2016,1,1) &&
-    row.UPDATE_TM < Date(2020,1,1),
-    df_recipients)
+df_TX = filter(row-> row.OUTCOME == "TX", df_recipients)
+dropmissing!(df_TX, :SCORE_MATCHING_FLAG)
+filter!(row->row.SCORE_MATCHING_FLAG, df_TX)
+filter!(row->row.CAN_LISTING_DT ≥ Date(2016,1,1), df_TX)
+filter!(row->row.UPDATE_TM < Date(2020,1,1), df_TX)
+filter!(row->row.CPRA < 80, df_TX)
 
+TX_ids = Int.(df_TX.CAN_ID)
 
-tx_ids = df.CAN_ID
+## Time to tx
+# Computed in elapsed days since dialysis
 
-df.time_to_transplant = Dates.days.(df.UPDATE_TM - df.CAN_LISTING_DT)
+time_to_transplant = Dict{Int, Int}()
 
-time_to_first_offer = Vector{Union{Int64, Missing}}(undef, nrow(df))
-
-for (i,r) in enumerate(eachrow(df))
-    
-    println(i)
-    
-    # extract the first offer after listing_date
-
-    df_offers = filter(row-> row.CAN_ID == r.CAN_ID &&
-    row.DON_DEATH_TM ≥ r.CAN_LISTING_DT &&
-    row.DON_DEATH_TM ≤ r.UPDATE_TM, df_donors)
-
-    if !isempty(df_offers)
-        time_to_first_offer[i] = Dates.days(minimum(df_offers.DON_DEATH_TM) - r.CAN_LISTING_DT)
+for row in eachrow(df_donors)
+    if haskey(recipient_registry, row.CAN_ID)
+        recipient = recipient_registry[row.CAN_ID]
+        elapsed_days = Dates.days(Dates.Date(row.DON_DEATH_TM) - recipient.dialysis)
+        time_to_transplant[row.CAN_ID] = elapsed_days
     end
-
 end
 
-count(ismissing.(time_to_first_offer))
-# Pour 40 patients transplantés, on ne retrouve pas les offres dans le fichier donors.
+## Time to TX as function of blood group
 
-df.time_to_first_offer = time_to_first_offer
+df = DataFrame(CAN_ID = Int[], ABO = String[], time = Int[], years = Float64[])
 
-# On remplace le temps avant la première offre avec le UPDATE_TM du fichier des receveurs.
-# for (i,r) in eachrow(df)
-#     if ismissing(r.time_to_first_offer)
-#         df
-# end
+n_notfound = 0
 
-df[!, :time_to_first_offer] = coalesce.(df[!, :time_to_first_offer], df[!, :time_to_transplant])
-
-df
-
-combine(groupby(df, :CAN_BLOOD), :time_to_first_offer => mean => :mean_waiting_time)
-
-
-
-
-
-## Retrieve transplanted recipients for which waiting time has to be estimated
-
-# CPRA < 80
-# Registered between 2015 and 2020
-# Transplanted before 2020
-# Only for their first registration if past transplant
-
-recipient_ids = Int64[]
-
-for id in keys(recipient_registry)
-    r = recipient_registry[id]
-    date = first(last_status[id])
-    status = uppercase(strip(last(last_status[id])))
-
-    if r.arrival ≥ Date(2015,1,1) && r.arrival < Date(2020,1,1)
-        if r.cpra ≤ 80
-            if status == "TX" && date < Date(2020,1,1)
-                push!(recipient_ids, id)
-            end
-        end
-    end  
-end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-function get_arrival_departure(df::AbstractDataFrame, future_date::Date=Date(2024,1,1))
-
-    @assert "OUTCOME" in names(df) "Missing column :OUTCOME"
-    @assert "UPDATE_TM" in names(df) "Missing column :UPDATE_TM"
-
-    # Sort the dataframe lines so that the most recent is on top
-    idx = sortperm(df.UPDATE_TM; rev=true)
-    outcomes = uppercase.(String.(df.OUTCOME[idx]))
-    updates = df.UPDATE_TM[idx]
-
-    arrival = df.CAN_LISTING_DT[1]
-
-    if outcomes[1] == "1"
-        departure = future_date # Arbitrary date after the end of the historic period
+for id in TX_ids
+    if haskey(time_to_transplant, id)
+        blood = recipient_registry[id].blood
+        waittime = time_to_transplant[id]
+        push!(df, [id, string(blood), waittime, waittime/365.25])
     else
-        departure = updates[1] # Si transplanté ou retiré
-    end
-
-    return arrival, departure
-end
-
-
-G = groupby(df_recipient, :CAN_ID)
-
-arrival, departure = get_arrival_departure(G[1])
-
-arrival = Vector{Date}(undef, length(G))
-departure= Vector{Date}(undef, length(G))
-can_id = Vector{Int64}(undef, length(G))
-
-for (i, g) in enumerate(G)
-    cand_id[i] = g.CAN_ID
-    arrival[i] , departure[i] = get_arrival_departure(g)
-end
-
-n_actives = Int64[]
-for iYear in 2014:2019
-    push!(n_actives, count(arrival .< Date(iYear,1,1) .< departure))
-end
-# Ça ne concorde pas avec le nombre obtenu avec build_recipient_registry dans simulation.jl
-
-n_arrivals = Int64[]
-for iYear in 2014:2019
-    push!(n_arrivals, count(Date(iYear,1,1) .≤ arrival .≤ Date(iYear,12,31)))
-end
-
-n_departures = Int64[]
-for iYear in 2014:2019
-    push!(n_departures, count(Date(iYear,1,1) .≤ departure .≤ Date(iYear,12,31)))
-end
-
-df_donors = KidneyAllocation.load_donor(donor_filepath)
-dropmissing!(df_donors, :DON_DEATH_TM)
-
-G = groupby(df_donors, :DON_ID)
-
-date_of_death = Vector{Date}(undef, length(G))
-for (i, g) in enumerate(G)
-    date_of_death[i] = g.DON_DEATH_TM[1]
-end
-
-n_donors = Int64[]
-for iYear in 2014:2019
-    push!(n_donors, count(Date(iYear,1,1) .≤ date_of_death .≤ Date(iYear,12,31)))
-end
-
-df = DataFrame(Year = 2014:2019, Actives = n_actives, Arrivals = n_arrivals, Departures = n_departures, Donors = n_donors)
-
-
-
-recipients = build_recipient_registry(recipient_filepath, cpra_filepath)
-
-# expiration = Union{Date, Nothing}[]
-expiration = Date[]
-for r in recipients
-    if !isnothing(r.expiration_date)
-    push!(expiration, r.expiration_date)
+        n_notfound +=1
     end
 end
 
-count( year.(expiration) .== 2014)
-count( year.(expiration) .== 2015)
-count( year.(expiration) .== 2016)
-count( year.(expiration) .== 2017)
-count( year.(expiration) .== 2018)
-count( year.(expiration) .== 2019)
+filter!(row -> row.years ≤ 10, df)
+
+# To have the order A, B, AB and O
+temp = df[6,:]
+df[20, :]
+df[6,:] = df[20,:]
+df[20,:] = temp
+
+fig = plot(df, x=:ABO, y=:years, Geom.boxplot,
+    Guide.xlabel("ABO Groups"),
+    Guide.ylabel("Waiting Years"),
+    Guide.yticks(ticks=0:10),
+    Theme(default_color = "gray30"))
+
+filepath = joinpath(fig_folder, "obs_waittime_before_tx.pdf")
+draw(PDF(filepath), fig)
+
+
+
+# Waiting time should not be longer than 1461 between inscription and transplant.
+# But the waiting time is computed from the dialysis date.
+
+filter(row -> row.CAN_ID == 15472, df_recipients)
+filter(row -> row.CAN_ID == 9985, df_recipients)
+
+filter(row -> row.CAN_ID == 9985, df_donors)
+
+recipient_registry[9985]
+time_to_transplant[9985]
+
+
+
+## Time to first offer
+# Computed in elapsed days since dialysis
+
+time_to_first_offer = Dict{Int, Int}()
+
+df_offers = KidneyAllocation.load_donor(donor_filepath)
+filter!(row -> row.ATT_TYPE == 5, df_offers)
+
+df_offers_filtered = similar(df_offers, 0)
+
+for df_offer in groupby(df_offers, :DON_ID)
+
+    filtered_df = KidneyAllocation.filter_offers_until_last_acceptance(df_offer)
+    append!(df_offers_filtered, filtered_df)
+
+end
+
+for g in groupby(df_offers_filtered, :CAN_ID)
+
+    CAN_ID = first(g.CAN_ID)
+
+    if haskey(recipient_registry, CAN_ID)
+        recipient = recipient_registry[CAN_ID]
+        elapsed_days = Dates.days(Dates.Date(minimum(g.DON_DEATH_TM)) - recipient.dialysis)
+        time_to_first_offer[CAN_ID] = elapsed_days
+    end
+
+end
+

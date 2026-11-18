@@ -1,11 +1,29 @@
+"""
+    first_qualifying_offer_quantile_given_offer(df, p; max_kdri=Inf)
 
-# """
-#     sample_arrival_dates(origin, sim_end, n) -> Vector{Date}
+Return the `p`th quantile of time to first qualifying offer, conditional on
+receiving at least one qualifying offer during the simulation. Simulation dataframe should be generated according to waiting_time_estimation.jl.
+"""
+function first_qualifying_offer_quantile_given_offer(
+    df::AbstractDataFrame,
+    p::Real;
+    max_kdri::Real=Inf,
+)::Union{Float64,Nothing}
+    check_df_columns(df, :simulation_id, :elapsed_days_since_arrival, :kdri)
 
-# Sample `n` dates uniformly in [`origin`, `sim_end`].
-# """
-# sample_arrival_dates(origin::Date, sim_end::Date, n::Integer) =
-#     KidneyAllocation.sample_days(origin, sim_end, n)
+    0 < p < 1 ||
+        throw(ArgumentError("`p` must lie strictly between 0 and 1"))
+
+    qualifying_df = filter(row -> row.kdri ≤ max_kdri, df)
+    isempty(qualifying_df) && return nothing
+
+    first_times = combine(
+        groupby(qualifying_df, :simulation_id),
+        :elapsed_days_since_dialysis => minimum => :elapsed_days_since_dialysis,
+    )
+
+    return quantile(first_times.:elapsed_days_since_dialysis, p)
+end
 
 """
     generate_arrivals(ids, arrival_rate; origin, nyears, rng) ->
@@ -18,8 +36,8 @@ arrival dates over the simulation window.
 function generate_arrivals(
     ids::AbstractVector{<:Int},
     arrival_rate::Real;
-    origin,
-    nyears,
+    origin::Date,
+    nyears::Int,
     rng::AbstractRNG=Random.default_rng(),
 )
     arrival_rate ≥ 0 ||
@@ -55,7 +73,7 @@ function generate_arrivals(
 
     ids = collect(keys(registry))
     sampled_ids, sampled_arrivals = generate_arrivals(
-        ids, arrival_rate; origin, nyears, rng,
+        ids, arrival_rate; origin=origin, nyears=nyears, rng=rng,
     )
 
     return reconstruct_recipients(registry, sampled_ids, sampled_arrivals)
@@ -78,7 +96,7 @@ function generate_arrivals(
 
     ids = collect(keys(registry))
     sampled_ids, sampled_arrivals = generate_arrivals(
-        ids, arrival_rate; origin, nyears, rng,
+        ids, arrival_rate; origin=origin, nyears=nyears, rng=rng,
     )
 
     multiple_sampled_ids = Int64[]
@@ -93,7 +111,41 @@ function generate_arrivals(
     return reconstruct_donors(registry, multiple_sampled_ids, multiple_arrival_dates)
 end
 
+"""
+    probability_qualifying_offer_by(df, t; max_kdri, n_simulations, censoring_time) -> Float64
 
+Return the simulated probability of receiving an offer with KDRI at most
+`max_kdri` by time `t`. Simulation dataframe should be generated according to waiting_time_estimation.jl.
+"""
+function probability_qualifying_offer_by(
+    df::AbstractDataFrame,
+    t::Integer;
+    max_kdri::Real=Inf,
+    n_simulations::Integer=1000,
+)::Float64
+
+    check_df_columns(df, :simulation_id, :elapsed_days_since_dialysis, :kdri)
+
+    n_simulations > 0 ||
+        throw(ArgumentError("`n_simulations` must be positive"))
+
+    all(id -> id isa Integer && 1 ≤ id ≤ n_simulations, df.simulation_id) ||
+        throw(ArgumentError("`:simulation_id` must lie in 1:$n_simulations"))
+
+
+    has_qualifying_offer = falses(n_simulations)
+
+    for simulation_df in groupby(df, :simulation_id)
+        simulation_id = first(simulation_df.simulation_id)
+
+        has_qualifying_offer[simulation_id] = any(
+            row -> row.elapsed_days_since_dialysis ≤ t && row.kdri ≤ max_kdri,
+            eachrow(simulation_df),
+        )
+    end
+
+    return mean(has_qualifying_offer)
+end
 
 """
     reconstruct_recipients(recipient_registry, ids, arrival_dates) -> Vector{Recipient}
@@ -143,86 +195,6 @@ function reconstruct_donors(
     return reconstructed
 end
 
-"""
-    simulate_initial_state_indexed(donors, recipients, dm; 
-        start_date, nyears, donor_rate, recipient_rate, origin_date, rng
-    ) -> (final_indices, shifted_arrival_dates)
-
-Simulate arrivals and allocations over the time horizon and return the registry
-indices and shifted arrival dates of recipients still active at the end.
-
-# Keyword Arguments
-- `start_date::Date`: Start of the simulation window.
-- `nyears::Int`: Length of the simulation horizon in years.
-- `donor_rate::Real`: Mean annual donor arrival rate.
-- `recipient_rate::Real`: Mean annual recipient arrival rate.
-- `origin_date::Date`: Reference date used to shift arrival times.
-- `rng::AbstractRNG`: Random number generator.
-"""
-function simulate_initial_state_indexed(
-    donors::Vector{Donor},
-    recipients::Vector{Recipient},
-    dm::AbstractDecisionModel;
-    start_date::Date=Date(2014, 1, 1),
-    nyears::Int=10,
-    donor_rate::Real=148.0,
-    recipient_rate::Real=272.83,
-    origin_date::Date=Date(2000, 1, 1),
-    rng::AbstractRNG=Random.default_rng(),
-)
-
-    simulation_end = start_date + Year(nyears)
-
-    # Recipients active at start_date: registry indices + their arrival dates
-    active_at_start_mask = is_active.(recipients, start_date)
-    waiting_registry_indices = findall(active_at_start_mask)
-    waiting_arrival_dates = KidneyAllocation.get_arrival.(recipients[waiting_registry_indices])
-
-    # New recipient arrivals: registry indices + simulated arrival dates
-    sampled_recipient_indices, sampled_recipient_arrival_dates =
-        generate_arrivals(eachindex(recipients), recipient_rate;
-            origin=start_date, nyears=nyears, rng=rng)
-
-    append!(waiting_registry_indices, sampled_recipient_indices)
-    append!(waiting_arrival_dates, sampled_recipient_arrival_dates)
-
-    # New donor arrivals (used only internally for allocation)
-    sampled_donor_indices, sampled_donor_arrival_dates =
-        generate_arrivals(eachindex(donors), donor_rate;
-            origin=start_date, nyears=nyears, rng=rng)
-
-    # Reconstruct temporary objects for allocation only
-    waiting_recipients =
-        reconstruct_recipients(recipients, waiting_registry_indices, waiting_arrival_dates)
-
-    arriving_donors =
-        reconstruct_donors(donors, sampled_donor_indices, sampled_donor_arrival_dates)
-
-    # Allocate donors (positions refer to waiting_recipients)
-    allocated_positions = allocate(arriving_donors, waiting_recipients, dm)
-
-    # Filter non-attributed organ (i.e. ind ==0)
-    filter!(>(0), allocated_positions)
-    sort!(allocated_positions)
-
-    # Remove transplanted recipients from the indexed representation
-    deleteat!(waiting_registry_indices, allocated_positions)
-    deleteat!(waiting_arrival_dates, allocated_positions)
-    deleteat!(waiting_recipients, allocated_positions)
-
-    # Keep recipients active at end of simulation
-    active_at_end_mask = is_active.(waiting_recipients, simulation_end)
-
-    final_recipient_indices = waiting_registry_indices[active_at_end_mask]
-    final_arrival_dates = waiting_arrival_dates[active_at_end_mask]
-
-    # Shift arrivals so that simulation_end maps to origin_date
-    time_waited = simulation_end .- final_arrival_dates
-    shifted_arrival_dates = origin_date .- time_waited
-
-    return final_recipient_indices, shifted_arrival_dates
-end
-
 
 """
     simulate_recipient_offers(...)
@@ -235,13 +207,13 @@ arrival date plus simulated recipient arrivals, and is assumed to refuse every
 offer.
 """
 function simulate_recipient_offers(recipient::Recipient,
-    recipient_filepath::AbstractString,
+    df_recipients::AbstractDataFrame,
     recipient_registry::Dict{Int, Recipient},
-    donor_filepath::AbstractString,
     donor_registry::Dict{Int, Donor},
-    dm::AbstractDecisionModel,
+    given_kidneys_registry::Dict{Int, Int},
+    dm::AbstractDecisionModel;
     nyears::Real,
-    nsim::Int;
+    nsim::Int,
     recipient_arrival_rate::Real,
     donor_arrival_rate::Real,
     mode::Symbol=:random,
@@ -249,7 +221,7 @@ function simulate_recipient_offers(recipient::Recipient,
     )
 
     # Get the initial list
-    initial_recipient_ids = KidneyAllocation.retrieve_observed_waiting_list(recipient_filepath, recipient.arrival - Day(1))
+    initial_recipient_ids = KidneyAllocation.retrieve_observed_waiting_list(df_recipients, recipient.arrival - Day(1))
 
     initial_recipients = Recipient[]
 
@@ -271,9 +243,7 @@ function simulate_recipient_offers(recipient::Recipient,
 
         ## Generate donor arrivals for the next nyears
 
-        kidney_by_id = KidneyAllocation.kidneys_given_by_donor(KidneyAllocation.load_donor(donor_filepath))
-
-        donors = KidneyAllocation.generate_arrivals(donor_registry, kidney_by_id, donor_arrival_rate, origin = recipient.arrival,nyears=nyears, rng=rng)
+        donors = KidneyAllocation.generate_arrivals(donor_registry, given_kidneys_registry, donor_arrival_rate, origin = recipient.arrival,nyears=nyears, rng=rng)
 
 
         ## Retrieve all the donors offered to recipient
@@ -288,6 +258,7 @@ function simulate_recipient_offers(recipient::Recipient,
 
 end
 
+
 """
     offers_to_dataframes(focal_recipient, offers_by_simulation) ->
         Tuple{DataFrame,DataFrame}
@@ -301,28 +272,36 @@ simulation, including simulations with no offers.
 function offers_to_dataframes(
     focal_recipient::Recipient,
     offers_by_simulation::Vector{Vector{Donor}},
+    dm::AbstractDecisionModel,
 )
     offers_df = DataFrame(
         simulation_id=Int[],
         offer_number=Int[],
         donor_arrival=Date[],
-        elapsed_days=Int[],
+        elapsed_days_since_arrival=Int[],
+        elapsed_days_since_dialysis=Int[], 
         kdri=Float64[],
+        acceptance_probability = Float64[],
     )
 
     for (simulation_id, offered_donors) in enumerate(offers_by_simulation)
         for (offer_number, donor) in enumerate(offered_donors)
             donor_date = Date(donor.arrival)
 
+            p = acceptance_probability(dm, focal_recipient, donor)
+
             push!(offers_df, (
                 simulation_id=simulation_id,
                 offer_number=offer_number,
                 donor_arrival=donor_date,
-                elapsed_days=Dates.value(donor_date - focal_recipient.arrival),
-                kdri=KidneyAllocation.get_kdri(donor), # or donor.kdri, depending on your API
+                elapsed_days_since_arrival = Dates.value(donor_date - focal_recipient.arrival),
+                elapsed_days_since_dialysis = Dates.value(donor_date - focal_recipient.dialysis),
+                kdri=KidneyAllocation.get_kdri(donor),
+                acceptance_probability = p,
             ))
         end
     end
 
     return offers_df
 end
+

@@ -11,6 +11,7 @@ function acceptance_probability(dm::GLMDecisionModel, recipients::Vector{Recipie
     # Preallocate columns (types matter)
     DON_AGE  = Vector{Int64}(undef, n)
     KDRI     = Vector{Float64}(undef, n)
+    
     CAN_AGE  = Vector{Int64}(undef, n)
     CAN_WAIT = Vector{Float64}(undef, n)
     CAN_BLOOD = Vector{ABOGroup}(undef, n)
@@ -18,6 +19,7 @@ function acceptance_probability(dm::GLMDecisionModel, recipients::Vector{Recipie
 
     MISMATCH = Vector{Int64}(undef, n)
     DON_CAN_SCORE = Vector{Float64}(undef, n)
+    AGE_GAP = Vector{Int64}(undef, n)
 
     for (i, r) in enumerate(recipients)
 
@@ -31,6 +33,7 @@ function acceptance_probability(dm::GLMDecisionModel, recipients::Vector{Recipie
 
         MISMATCH[i] = mismatch_count(donor, r)
         DON_CAN_SCORE[i] = score(donor, r)
+        AGE_GAP[i] = CAN_AGE[i] - DON_AGE[i] 
         
     end
 
@@ -42,6 +45,7 @@ function acceptance_probability(dm::GLMDecisionModel, recipients::Vector{Recipie
         CPRA = CPRA,
         MISMATCH = MISMATCH,
         DON_CAN_SCORE = DON_CAN_SCORE,
+        AGE_GAP = AGE_GAP
     )
 
     return GLM.predict(dm.fm, df)

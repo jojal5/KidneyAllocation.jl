@@ -91,92 +91,79 @@ function allocate(
 end
 
 """
-    allocate_until_transplant(donors, recipients, dm, recipient_index;
-                              mode=:random, rng=Random.default_rng()) -> Int
+    allocate_until_transplant(focal_recipient, donors, waitlist_recipients, dm,
+                              is_unallocated; ...) -> Union{Donor,Nothing}
 
-Allocate donors sequentially until `recipient_index` is allocated.
+Process donors sequentially until `focal_recipient` accepts an offer. Return
+the transplanting donor, or `nothing` if no offer is accepted.
 
-Return the corresponding donor index, or `0` if that recipient is never
-allocated. `mode` and `rng` are forwarded to `allocate_one_donor`.
+`is_unallocated` is updated in place when a waiting-list recipient accepts an
+offer.
 """
 function allocate_until_transplant(
+    focal_recipient::Recipient,
     donors::Vector{Donor},
-    recipients::Vector{Recipient},
+    waitlist_recipients::Vector{Recipient},
     dm::AbstractDecisionModel,
-    recipient_index::Int;
+    is_unallocated::BitVector=trues(length(waitlist_recipients));
     mode::Symbol=:random,
     rng::AbstractRNG=Random.default_rng(),
-)
-    1 ≤ recipient_index ≤ length(recipients) ||
-        throw(ArgumentError(
-            "Recipient index must be in 1:$(length(recipients)); got $recipient_index",
-        ))
+)::Union{Donor, Nothing}
 
-    is_unallocated = trues(length(recipients))
+    length(is_unallocated) == length(waitlist_recipients) ||
+        throw(ArgumentError("`is_unallocated` must have one entry per waiting-list recipient"))
 
-    for donor_idx in eachindex(donors)
-        recipient_idx = allocate_one_donor(donors[donor_idx], recipients, dm, is_unallocated; mode=mode, rng=rng)
+    candidate_recipients = [waitlist_recipients; focal_recipient]
+    focal_index = length(candidate_recipients)
 
-        recipient_idx == recipient_index && return donor_idx
+    for donor in donors
+        # The focal recipient is always still unallocated.
+        candidate_is_unallocated = BitVector([is_unallocated; true])
 
-        if recipient_idx != 0
-            is_unallocated[recipient_idx] = false
-        end
-    end
-
-    return 0
-end
-
-"""
-    allocate_until_next_offer(donors, recipients, dm, recipient_index;
-                              mode=:random, rng=Random.default_rng()) -> Int
-
-Return the index of the first donor for which `recipient_index` would receive
-an offer, or `0` if that recipient is never offered a donor.
-"""
-function allocate_until_next_offer(
-    donors::Vector{Donor},
-    recipients::Vector{Recipient},
-    dm::AbstractDecisionModel,
-    recipient_index::Int;
-    mode::Symbol=:random,
-    rng::AbstractRNG=Random.default_rng(),
-)
-    1 ≤ recipient_index ≤ length(recipients) ||
-        throw(ArgumentError(
-            "Recipient index must be in 1:$(length(recipients)); got $recipient_index",
-        ))
-
-    is_unallocated = trues(length(recipients))
-
-    for donor_idx in eachindex(donors)
-        donor = donors[donor_idx]
-
-        ranked_indices = rank_eligible_recipient_indices(donor, recipients, is_unallocated)
+        ranked_indices = rank_eligible_recipient_indices(donor, candidate_recipients, candidate_is_unallocated; rng=rng)
 
         isempty(ranked_indices) && continue
 
+        focal_position = findfirst(==(focal_index), ranked_indices)
 
-        allocated_recipient_index = allocate_one_donor(donor, recipients, dm, ranked_indices; mode=mode, rng=rng)
+        if focal_position === nothing
+            allocated_index = allocate_one_donor(donor, candidate_recipients, dm, ranked_indices; mode=mode, rng=rng)
 
-        target_position = findfirst(==(recipient_index), ranked_indices)
-        acceptance_position = findfirst(
-            ==(allocated_recipient_index),
-            ranked_indices,
-        )
+            allocated_index != 0 &&
+                (is_unallocated[allocated_index] = false)
 
-        if !isnothing(target_position) &&
-           (isnothing(acceptance_position) ||
-            target_position ≤ acceptance_position)
-            return donor_idx
+            continue
         end
 
-        if allocated_recipient_index != 0
-            is_unallocated[allocated_recipient_index] = false
+        # A higher-ranked recipient accepting prevents an offer to the focal one.
+        if focal_position > 1
+            higher_priority_indices = ranked_indices[1:(focal_position - 1)]
+
+            allocated_index = allocate_one_donor(donor, candidate_recipients, dm, higher_priority_indices; mode=mode, rng=rng)
+
+            if allocated_index != 0
+                is_unallocated[allocated_index] = false
+                continue
+            end
+        end
+
+        # The offer reaches the focal recipient. If they accept it, return the donor; otherwise, continue allocation.
+        if decide(dm, focal_recipient, donor; mode=mode, rng=rng)
+            return donor
+        end  
+
+        # The offer can then proceed to lower-ranked recipients.
+        if focal_position < length(ranked_indices)
+            lower_priority_indices = ranked_indices[(focal_position + 1):end]
+
+            allocated_index = allocate_one_donor(donor, candidate_recipients, dm, lower_priority_indices; mode=mode, rng=rng)
+
+            allocated_index != 0 &&
+                (is_unallocated[allocated_index] = false)
         end
     end
 
-    return 0
+    return nothing
 end
 
 """
@@ -363,78 +350,3 @@ end
 
 
 
-"""
-    allocate_until_transplant(focal_recipient, donors, waitlist_recipients, dm,
-                              is_unallocated; ...) -> Union{Donor,Nothing}
-
-Process donors sequentially until `focal_recipient` accepts an offer. Return
-the transplanting donor, or `nothing` if no offer is accepted.
-
-`is_unallocated` is updated in place when a waiting-list recipient accepts an
-offer.
-"""
-function allocate_until_transplant(
-    focal_recipient::Recipient,
-    donors::Vector{Donor},
-    waitlist_recipients::Vector{Recipient},
-    dm::AbstractDecisionModel,
-    is_unallocated::BitVector=trues(length(waitlist_recipients));
-    mode::Symbol=:random,
-    rng::AbstractRNG=Random.default_rng(),
-)::Union{Donor, Nothing}
-
-    length(is_unallocated) == length(waitlist_recipients) ||
-        throw(ArgumentError("`is_unallocated` must have one entry per waiting-list recipient"))
-
-    candidate_recipients = [waitlist_recipients; focal_recipient]
-    focal_index = length(candidate_recipients)
-
-    for donor in donors
-        # The focal recipient is always still unallocated.
-        candidate_is_unallocated = BitVector([is_unallocated; true])
-
-        ranked_indices = rank_eligible_recipient_indices(donor, candidate_recipients, candidate_is_unallocated; rng=rng)
-
-        isempty(ranked_indices) && continue
-
-        focal_position = findfirst(==(focal_index), ranked_indices)
-
-        if focal_position === nothing
-            allocated_index = allocate_one_donor(donor, candidate_recipients, dm, ranked_indices; mode=mode, rng=rng)
-
-            allocated_index != 0 &&
-                (is_unallocated[allocated_index] = false)
-
-            continue
-        end
-
-        # A higher-ranked recipient accepting prevents an offer to the focal one.
-        if focal_position > 1
-            higher_priority_indices = ranked_indices[1:(focal_position - 1)]
-
-            allocated_index = allocate_one_donor(donor, candidate_recipients, dm, higher_priority_indices; mode=mode, rng=rng)
-
-            if allocated_index != 0
-                is_unallocated[allocated_index] = false
-                continue
-            end
-        end
-
-        # The offer reaches the focal recipient. If they accept it, return the donor; otherwise, continue allocation.
-        if decide(dm, focal_recipient, donor; mode=mode, rng=rng)
-            return donor
-        end  
-
-        # The offer can then proceed to lower-ranked recipients.
-        if focal_position < length(ranked_indices)
-            lower_priority_indices = ranked_indices[(focal_position + 1):end]
-
-            allocated_index = allocate_one_donor(donor, candidate_recipients, dm, lower_priority_indices; mode=mode, rng=rng)
-
-            allocated_index != 0 &&
-                (is_unallocated[allocated_index] = false)
-        end
-    end
-
-    return nothing
-end
