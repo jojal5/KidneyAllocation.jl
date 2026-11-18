@@ -1,9 +1,15 @@
 using Pkg
 Pkg.activate(".")
 
-using CSV, DataFrames, Dates, Gadfly, Statistics
+using CSV, DataFrames, Dates, Distributions, Statistics
+
+using Cairo, Fontconfig, Gadfly
+using ExtremePlots
 
 using KidneyAllocation
+
+fig_folder = "/Users/jalbert/Dropbox/Files/Supervision/encours/AnastasiyaOlekBasanets/Figures"
+
 
 recipient_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/Candidates.csv"
 cpra_filepath = "/Users/jalbert/Documents/PackageDevelopment.nosync/kidney-research/kidney_research/KidneyResearch/data/CandidatesCPRA.csv"
@@ -32,7 +38,14 @@ end
 
 df = DataFrame(Date = t, Candidates = n)
 
-plot(df, x=:Date, y=:Candidates)
+fig = plot(df, x=:Date, y=:Candidates,
+    Coord.cartesian(xmax=Date(2022,1,1)),
+    Guide.ylabel("Waiting candidates"),
+    Theme(default_color = "gray30"))
+
+    
+filepath = joinpath(fig_folder, "waiting_candidates.pdf")
+draw(PDF(filepath), fig)
 
 ## Monthly donor arrivals
 
@@ -51,7 +64,21 @@ df = combine(groupby(df_donor_arrival, [:year, :month]), :DON_DEATH_TM => length
 d = [Date(r.year, r.month, 1) for r in eachrow(df) ]
 df.Date = d
 
-plot(df, x=:Date, y=:Donors)
+filter!(row -> row.Date ≥ Date(2012,4, 1) && row.Date < Date(2022,8,1), df)
+
+fig = plot(df, x=:Date, y=:Donors, Theme(default_color = "gray30"),
+    Guide.ylabel("Donor monthly arrivals"))
+
+filepath = joinpath(fig_folder, "monthly_donors.pdf")
+draw(PDF(filepath), fig)
+
+
+
+λ̂ = mean(df.Donors)
+pd = Poisson(λ̂)
+fig = qqplot(pd, df.Donors)
+filepath = joinpath(fig_folder, "fitted_Poisson_donors.pdf")
+draw(PDF(filepath), fig)
 
 
 ## Monthly candidate arrivals
@@ -70,13 +97,28 @@ df = combine(groupby(df_recipient_arrival, [:year, :month]), :CAN_LISTING_DT => 
 d = [Date(r.year, r.month, 1) for r in eachrow(df) ]
 df.Date = d
 
-plot(df, x=:Date, y=:Candidates)
+filter!(row -> row.Date ≥ Date(2012,4, 1) && row.Date < Date(2022,8,1), df)
+
+fig = plot(df, x=:Date, y=:Candidates, Theme(default_color = "gray30"),
+    Guide.ylabel("Candiate monthly arrivals"))
+
+filepath = joinpath(fig_folder, "monthly_candidates.pdf")
+draw(PDF(filepath), fig)
+
+
+λ̂ = mean(df.Candidates)
+pd = Poisson(λ̂)
+fig = qqplot(pd, df.Candidates)
+filepath = joinpath(fig_folder, "fitted_Poisson_recipients.pdf")
+draw(PDF(filepath), fig)
 
 
 
 ## Retrieve transplanted recipients for prediction
 
 df_TX = filter(row-> row.OUTCOME == "TX", df_recipients)
+dropmissing!(df_TX, :SCORE_MATCHING_FLAG)
+filter!(row->row.SCORE_MATCHING_FLAG, df_TX)
 filter!(row->row.CAN_LISTING_DT ≥ Date(2016,1,1), df_TX)
 filter!(row->row.UPDATE_TM < Date(2020,1,1), df_TX)
 filter!(row->row.CPRA < 80, df_TX)
@@ -98,7 +140,7 @@ end
 
 ## Time to TX as function of blood group
 
-df = DataFrame(CAN_ID = Int[], ABO = String[], time = Int[])
+df = DataFrame(CAN_ID = Int[], ABO = String[], time = Int[], years = Float64[])
 
 n_notfound = 0
 
@@ -106,13 +148,29 @@ for id in TX_ids
     if haskey(time_to_transplant, id)
         blood = recipient_registry[id].blood
         waittime = time_to_transplant[id]
-        push!(df, [id, string(blood), waittime])
+        push!(df, [id, string(blood), waittime, waittime/365.25])
     else
         n_notfound +=1
     end
 end
 
-plot(df, x=:ABO, y=:time, Geom.boxplot)
+filter!(row -> row.years ≤ 10, df)
+
+# To have the order A, B, AB and O
+temp = df[6,:]
+df[20, :]
+df[6,:] = df[20,:]
+df[20,:] = temp
+
+fig = plot(df, x=:ABO, y=:years, Geom.boxplot,
+    Guide.xlabel("ABO Groups"),
+    Guide.ylabel("Waiting Years"),
+    Guide.yticks(ticks=0:10),
+    Theme(default_color = "gray30"))
+
+filepath = joinpath(fig_folder, "obs_waittime_before_tx.pdf")
+draw(PDF(filepath), fig)
+
 
 
 # Waiting time should not be longer than 1461 between inscription and transplant.
@@ -126,37 +184,6 @@ filter(row -> row.CAN_ID == 9985, df_donors)
 recipient_registry[9985]
 time_to_transplant[9985]
 
-## Time to tx
-# Computed in elapsed days since inscription
-
-time_to_transplant = Dict{Int, Int}()
-
-for row in eachrow(df_donors)
-    if haskey(recipient_registry, row.CAN_ID)
-        recipient = recipient_registry[row.CAN_ID]
-        elapsed_days = Dates.days(Dates.Date(row.DON_DEATH_TM) - recipient.arrival)
-        time_to_transplant[row.CAN_ID] = elapsed_days
-    end
-end
-
-## Time to TX as function of blood group
-
-df = DataFrame(CAN_ID = Int[], ABO = String[], time = Int[])
-
-n_notfound = 0
-
-for id in TX_ids
-    if haskey(time_to_transplant, id)
-        blood = recipient_registry[id].blood
-        waittime = time_to_transplant[id]
-        push!(df, [id, string(blood), waittime])
-    else
-        n_notfound +=1
-    end
-end
-
-plot(df, x=:ABO, y=:time, Geom.boxplot,
-    Coord.cartesian(ymin = 0))
 
 
 ## Time to first offer

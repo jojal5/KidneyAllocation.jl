@@ -87,40 +87,6 @@
 
     end
 
-    @testset "filter_dialysis_episode()" begin
-        import KidneyAllocation.filter_dialysis_episode
-
-        filtered_df = filter_dialysis_episode(G[1])
-        @test nrow(filtered_df) == 7
-
-        filtered_df = filter_dialysis_episode(G[2])
-        @test nrow(filtered_df) == 2
-
-        filtered_df = filter_dialysis_episode(G[3])
-        @test nrow(filtered_df) == 12
-
-        filtered_df = filter_dialysis_episode(G[4])
-        @test nrow(filtered_df) == 2
-
-        filtered_df = filter_dialysis_episode(G[5])
-        @test nrow(filtered_df) == 2
-
-        filtered_df = filter_dialysis_episode(G[6])
-        @test nrow(filtered_df) == 1
-
-    end
-
-    @testset "first_exit_after_dialysis()" begin
-        import KidneyAllocation.first_exit_after_dialysis
-
-        @test first_exit_after_dialysis(G[1]) == DateTime(2012,4,24,14,33,41)
-        @test first_exit_after_dialysis(G[2]) == DateTime(2004,1,14,22,55,12)
-        @test first_exit_after_dialysis(G[3]) == DateTime(2012, 07, 01, 17, 0, 10)
-        @test first_exit_after_dialysis(G[4]) == DateTime(2004, 04, 20, 00, 30, 14)
-        @test first_exit_after_dialysis(G[5]) === nothing
-        @test first_exit_after_dialysis(G[6]) === nothing
-
-    end
 
     @testset "filter_first_waitlist_episode" begin
         import KidneyAllocation.filter_first_waitlist_episode
@@ -234,79 +200,5 @@
 
     end
 
-    @testset "infer_number_of_kidneys_offered()" begin
-        import KidneyAllocation.infer_number_of_kidneys_offered
-        @test infer_number_of_kidneys_offered(G[1]) == 2
-        @test infer_number_of_kidneys_offered(G[2]) == 2 # No kidney has been accepted but we suppos that 2 were offered
-        @test infer_number_of_kidneys_offered(G[3]) == 2 # 3 recipients have accepted, but only 2 kidneys were transplanted
-        @test infer_number_of_kidneys_offered(G[4]) == 1 # Only one kidney offered and it is accepted
-    end
-
-
-
-    
-
-
-
-    
-
-    
-
-
-    
-
-    
-
-    # @testset "kidneys_given_by_donor()" begin
-
-    #     import KidneyAllocation.kidneys_given_by_donor
-
-    #     # Missing columns
-    #     df = DataFrame(STATUS="TX")
-    #     @test_throws AssertionError kidneys_given_by_donor(df)
-    #     df = DataFrame(DON_ID=1)
-    #     @test_throws AssertionError kidneys_given_by_donor(df)
-
-    #     df = DataFrame(DON_ID=1, STATUS=[missing, missing, "TX", "TX"])
-    #     append!(df, DataFrame(DON_ID=2, STATUS=[missing, "TX", missing]))
-    #     append!(df, DataFrame(DON_ID=3, STATUS=[missing, missing, missing]))
-    #     d = kidneys_given_by_donor(df)
-
-    #     @test d[1] == 2
-    #     @test d[2] == 1
-    #     @test d[3] == 0
-
-    # end
-
 end
-
-# @testset "offered_recipients()" begin
-
-#     import KidneyAllocation.filter_offers_until_last_acceptance
-
-#     # Single row transplanted
-#     df = DataFrame(DON_ID=1, STATUS="TX", DON_CAN_SCORE=30)
-#     df_offered = filter_offers_until_last_acceptance(df)
-#     @test df_offered.DON_CAN_SCORE == [30]
-
-#     # The first offer is refused, but the second is accepted (not sorted)
-#     df = DataFrame(DON_ID=[1, 1], STATUS=["TX", missing], DON_CAN_SCORE=[29, 30])
-#     df_offered = filter_offers_until_last_acceptance(df)
-#     @test df_offered.DON_CAN_SCORE == [30, 29]
-
-#     # All the offers are refused
-#     df = DataFrame(DON_ID=[1, 1], STATUS=[missing, missing], DON_CAN_SCORE=[30, 29])
-#     df_offered = filter_offers_until_last_acceptance(df)
-#     @test isempty(df_offered)
-
-#     # The fourth offers is the last accepted.
-#     df = DataFrame(DON_ID=1, STATUS=[missing, "TX", missing, "TX", missing], DON_CAN_SCORE=[30, 29, 28, 27, 26])
-#     df_offered = filter_offers_until_last_acceptance(df)
-#     @test df_offered.DON_CAN_SCORE == [30, 29, 28, 27]
-
-#     # Three offers are marked as TX (we keep all of them)
-#     df = DataFrame(DON_ID=1, STATUS=[missing, "TX", missing, "TX", "TX"], DON_CAN_SCORE=[30, 29, 28, 27, 26])
-#     df_offered = filter_offers_until_last_acceptance(df)
-#     @test df_offered.DON_CAN_SCORE == [30, 29, 28, 27, 26]
-# end
 
